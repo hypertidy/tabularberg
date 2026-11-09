@@ -33,9 +33,9 @@ test_that("remap resolve / unresolve", {
 })
 
 test_that("Icechunk -> byterefs -> Icechunk -> byterefs is the identity (virtual_v2 fixture)", {
-  skip_if_no_fixtures(); skip_if_no_byterefs_deps()
-  fx <- manifest()$fixtures$virtual_v2
-  s <- ic_session_readonly(ic_repo_open(fx_path("virtual_v2"), authorize = fx$virtual_prefix))
+  skip_if_no_byterefs_deps()
+  fx <- local_vfx(); fx$virtual_prefix <- fx$auth
+  s <- ic_session_readonly(ic_repo_open(fx$path, authorize = fx$virtual_prefix))
   b1 <- ic_to_byterefs(s)
   expect_s3_class(b1, "byterefs")
   expect_true(all(startsWith(b1$sources$source, "/")))  # file:// -> verbatim path
@@ -56,9 +56,9 @@ test_that("Icechunk -> byterefs -> Icechunk -> byterefs is the identity (virtual
 })
 
 test_that("a changed source is refused through its checksum", {
-  skip_if_no_fixtures(); skip_if_no_byterefs_deps()
-  fx <- manifest()$fixtures$virtual_v2
-  src <- ic_session_readonly(ic_repo_open(fx_path("virtual_v2"), authorize = fx$virtual_prefix))
+  skip_if_no_byterefs_deps()
+  fx <- local_vfx(); fx$virtual_prefix <- fx$auth
+  src <- ic_session_readonly(ic_repo_open(fx$path, authorize = fx$virtual_prefix))
   br <- ic_to_byterefs(src)
   # point at a private copy of the source, recorded with an old mtime
   d <- withr::local_tempdir()

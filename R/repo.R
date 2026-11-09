@@ -104,7 +104,6 @@ ic_ancestry <- function(repo, branch = NULL, tag = NULL, snapshot = NULL) {
 ic_branch_create <- function(repo, name, snapshot_id) invisible(.ic(ic_branch_create_(repo$ptr, name, snapshot_id)))
 
 #' @rdname ic_refs
-#' @param from optional expected current tip (safe reset).
 #' @export
 ic_branch_reset <- function(repo, name, snapshot_id, from = NULL) {
   invisible(.ic(ic_branch_reset_(repo$ptr, name, snapshot_id, .chr(from))))
@@ -127,8 +126,11 @@ ic_tag_delete <- function(repo, name) invisible(.ic(ic_tag_delete_(repo$ptr, nam
 ic_lookup <- function(repo, branch = "main", tag = NULL) .ic(ic_lookup_(repo$ptr, .chr(branch), .chr(tag)))
 
 #' @rdname ic_refs
-#' @param from,to lists like `list(branch = "main")`, `list(tag = "v1")`,
-#'   `list(snapshot = id)`.
+#' @param from for `ic_branch_reset()`: optional expected current tip (the
+#'   reset fails if the branch has moved); for `ic_diff()`: the starting
+#'   version, as for `to`.
+#' @param to for `ic_diff()`: a list like `list(branch = "main")`,
+#'   `list(tag = "v1")` or `list(snapshot = id)`.
 #' @export
 ic_diff <- function(repo, from, to) {
   g <- function(x, k) .chr(x[[k]])

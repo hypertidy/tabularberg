@@ -17,7 +17,7 @@ cloud = ["minimal", "icechunk/object-store-s3", "icechunk/object-store-gcs", "ic
 full = ["cloud", "icechunk/s3", "icechunk/redirect"]
 
 [dependencies]
-extendr-api = "0.8.2"
+extendr-api = "0.9"
 icechunk = { version = "=2.3.1", default-features = false }
 tokio = { version = "1", features = ["rt-multi-thread"] }
 bytes = "1"

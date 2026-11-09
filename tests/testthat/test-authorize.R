@@ -15,15 +15,14 @@ test_that("authorize expansion against declared containers", {
 })
 
 test_that("broad authorize reads virtual chunks; containers listed", {
-  skip_if_no_fixtures()
-  fx <- manifest()$fixtures$virtual_v2
-  r0 <- ic_repo_open(fx_path("virtual_v2"))
+  fx <- local_vfx(); fx$virtual_prefix <- fx$auth
+  r0 <- ic_repo_open(fx$path)
   cn <- ic_repo_containers(r0)
   expect_true(fx$virtual_prefix %in% cn$prefix)
   expect_false(any(cn$authorized))
-  r <- ic_repo_open(fx_path("virtual_v2"), authorize = "file://")
+  r <- ic_repo_open(fx$path, authorize = "file://")
   expect_true(all(ic_repo_containers(r)$authorized))
   s <- ic_session_readonly(r)
   expect_type(ic_get(s, "from_bin/c/0/0"), "raw")
-  expect_error(ic_repo_open(fx_path("virtual_v2"), authorize = paste0(fx$virtual_prefix, "deeper/")), "lies inside")
+  expect_error(ic_repo_open(fx$path, authorize = paste0(fx$virtual_prefix, "deeper/")), "lies inside")
 })

@@ -206,7 +206,7 @@ setMethod("dbConnect", "IcechunkDriver", function(drv, storage, branch = NULL, t
   for (k in seq_len(nd) - 1L) {
     lo <- 0; hi <- Inf
     m <- regmatches(w, gregexpr(paste0("(?i)", col(k), "\\s+BETWEEN\\s+", int, "\\s+AND\\s+", int), w, perl = TRUE))[[1]]
-    for (x in m) { v <- as.numeric(regmatches(x, gregexpr("-?\\d+(?:\\.0+)?(?![\\w])", x, perl = TRUE))[[1]]); v <- tail(v, 2); lo <- max(lo, v[1]); hi <- min(hi, v[2] + 1) }
+    for (x in m) { v <- as.numeric(regmatches(x, gregexpr("-?\\d+(?:\\.0+)?(?![\\w])", x, perl = TRUE))[[1]]); v <- v[length(v) - 1:0]; lo <- max(lo, v[1]); hi <- min(hi, v[2] + 1) }
     w2 <- gsub(paste0("(?i)", col(k), "\\s+BETWEEN\\s+", int, "\\s+AND\\s+", int), " ", w, perl = TRUE)
     m <- regmatches(w2, gregexpr(paste0("(?i)", col(k), "\\s+IN\\s*\\(([-\\d.,\\s]+)\\)"), w2, perl = TRUE))[[1]]
     for (x in m) { v <- as.numeric(regmatches(sub("^[^(]*\\(", "", x), gregexpr("-?\\d+(?:\\.0+)?", sub("^[^(]*\\(", "", x), perl = TRUE))[[1]]); lo <- max(lo, min(v)); hi <- min(hi, max(v) + 1) }
@@ -547,6 +547,7 @@ setMethod("dbRollback", "IcechunkConnection", function(conn, ...) {
 #'   inline chunk; optional `present` (0 rows are skipped), `etag`, `mtime`.
 #'   For `arrays`: byterefs `arrays` rows (JSON text columns), creating
 #'   each array.
+#' @param row.names ignored (required by the DBI generic).
 #' @param checksums record `etag` / `mtime` checksums on virtual refs.
 #'   Rows without them (columns absent or `NA`) take the checksum of the
 #'   same `path` in the `sources` table, so refs to a known source are

@@ -134,6 +134,7 @@ pub(crate) fn containers(json: &str) -> R<Vec<VirtualChunkContainer>> {
     Ok(out)
 }
 
+/// @noRd
 #[extendr]
 fn ic_storage_local_(path: &str) -> R<ExternalPtr<RStorage>> {
     let st = block_on(icechunk::storage::new_local_filesystem_storage(std::path::Path::new(path)))
@@ -141,12 +142,14 @@ fn ic_storage_local_(path: &str) -> R<ExternalPtr<RStorage>> {
     Ok(wrap(st, format!("local: {path}")))
 }
 
+/// @noRd
 #[extendr]
 fn ic_storage_memory_() -> R<ExternalPtr<RStorage>> {
     let st = block_on(icechunk::storage::new_in_memory_storage()).map_err(ic)?;
     Ok(wrap(st, "in-memory".into()))
 }
 
+/// @noRd
 #[extendr]
 fn ic_storage_http_(base_url: &str) -> R<ExternalPtr<RStorage>> {
     let st = icechunk::storage::new_http_storage(base_url, None, None).map_err(ic)?;
@@ -154,6 +157,7 @@ fn ic_storage_http_(base_url: &str) -> R<ExternalPtr<RStorage>> {
 }
 
 /// opts_json: S3Options fields plus credential spec under "credentials".
+/// @noRd
 #[extendr]
 fn ic_storage_s3_(bucket: &str, prefix: &str, opts_json: &str, backend: &str) -> R<ExternalPtr<RStorage>> {
     let v = parse(opts_json)?;
@@ -181,6 +185,7 @@ fn ic_storage_s3_(bucket: &str, prefix: &str, opts_json: &str, backend: &str) ->
     Ok(wrap(st, desc))
 }
 
+/// @noRd
 #[extendr]
 fn ic_storage_gcs_(bucket: &str, prefix: &str, anonymous: bool) -> R<ExternalPtr<RStorage>> {
     #[cfg(feature = "cloud")]
@@ -201,6 +206,7 @@ fn ic_storage_gcs_(bucket: &str, prefix: &str, anonymous: bool) -> R<ExternalPtr
     }
 }
 
+/// @noRd
 #[extendr]
 fn ic_storage_azure_(account: &str, container: &str, prefix: &str) -> R<ExternalPtr<RStorage>> {
     #[cfg(feature = "cloud")]
@@ -221,6 +227,7 @@ fn ic_storage_azure_(account: &str, container: &str, prefix: &str) -> R<External
     }
 }
 
+/// @noRd
 #[extendr]
 fn ic_storage_desc_(st: ExternalPtr<RStorage>) -> String {
     st.desc.clone()

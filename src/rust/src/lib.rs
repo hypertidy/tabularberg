@@ -7,12 +7,14 @@ mod session;
 mod storage;
 
 /// Version of the icechunk crate compiled into this package.
+/// @noRd
 #[extendr]
 fn ic_icechunk_version_() -> &'static str {
     session::ICECHUNK_CRATE_VERSION
 }
 
 /// Cargo features compiled in (the pizzarr#185 lesson: check the binary).
+/// @noRd
 #[extendr]
 fn ic_compiled_features_() -> Vec<String> {
     let mut f = Vec::new();

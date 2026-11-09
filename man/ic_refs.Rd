@@ -43,10 +43,12 @@ ic_diff(repo, from, to)
 
 \item{snapshot_id}{a snapshot id.}
 
-\item{from}{optional expected current tip (safe reset).}
+\item{from}{for \code{ic_branch_reset()}: optional expected current tip (the
+reset fails if the branch has moved); for \code{ic_diff()}: the starting
+version, as for \code{to}.}
 
-\item{from, to}{lists like \code{list(branch = "main")}, \code{list(tag = "v1")},
-\code{list(snapshot = id)}.}
+\item{to}{for \code{ic_diff()}: a list like \code{list(branch = "main")},
+\code{list(tag = "v1")} or \code{list(snapshot = id)}.}
 }
 \value{
 data frames for listings; snapshot ids as character.

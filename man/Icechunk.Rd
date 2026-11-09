@@ -192,6 +192,8 @@ same \code{path} in the \code{sources} table, so refs to a known source are
 checked like the rest; a path new to the repository gets none unless
 supplied.}
 
+\item{row.names}{ignored (required by the DBI generic).}
+
 \item{overwrite, append}{only appending is supported.}
 
 \item{object}{an Icechunk DBI object.}

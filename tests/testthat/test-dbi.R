@@ -1,10 +1,6 @@
 dbi_repo <- function() {
-  skip_if_no_fixtures()
   skip_if_not_installed("RSQLite"); skip_if_not_installed("blob")
-  fx <- manifest()$fixtures$virtual_v2
-  d <- withr::local_tempdir(.local_envir = parent.frame())
-  file.copy(fx_path("virtual_v2"), d, recursive = TRUE)
-  list(path = file.path(d, basename(fx_path("virtual_v2"))), auth = fx$virtual_prefix)
+  local_vfx(parent.frame())
 }
 
 test_that("tables, reads and SQL", {
@@ -126,9 +122,9 @@ test_that("dbCommit(rebase = TRUE): disjoint chunks rebase, same chunk needs a s
 })
 
 test_that("appended refs inherit the checksum of a known source", {
-  skip_if_no_fixtures(); skip_if_not_installed("RSQLite"); skip_if_not_installed("blob")
-  fx <- manifest()$fixtures$virtual_v2
-  src <- ic_session_readonly(ic_repo_open(fx_path("virtual_v2"), authorize = fx$virtual_prefix))
+  skip_if_not_installed("RSQLite"); skip_if_not_installed("blob")
+  fx <- local_vfx(); fx$virtual_prefix <- fx$auth
+  src <- ic_session_readonly(ic_repo_open(fx$path, authorize = fx$virtual_prefix))
   br <- ic_to_byterefs(src)
   # private copy of the source, recorded with its mtime (so refs carry a checksum)
   d <- withr::local_tempdir()

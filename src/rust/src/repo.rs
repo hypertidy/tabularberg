@@ -97,6 +97,7 @@ fn config_with_split(containers_json: &str, split_json: &str) -> R<Option<Reposi
     Ok(Some(cfg))
 }
 
+/// @noRd
 #[extendr]
 fn ic_repo_open_(st: ExternalPtr<RStorage>, containers_json: &str, authorize_json: &str) -> R<ExternalPtr<RRepo>> {
     let cfg = config_with(containers_json)?;
@@ -109,6 +110,7 @@ fn ic_repo_open_(st: ExternalPtr<RStorage>, containers_json: &str, authorize_jso
     Ok(ExternalPtr::new(RRepo { inner: Arc::new(repo) }))
 }
 
+/// @noRd
 #[extendr]
 fn ic_repo_create_(
     st: ExternalPtr<RStorage>,
@@ -133,6 +135,7 @@ fn ic_repo_create_(
 
 /// URL prefixes of the virtual chunk containers the repository declares
 /// (persisted config plus any passed at open), and those it authorises.
+/// @noRd
 #[extendr]
 fn ic_repo_containers_(repo: ExternalPtr<RRepo>) -> List {
     let mut declared: Vec<String> = repo
@@ -150,6 +153,7 @@ fn ic_repo_containers_(repo: ExternalPtr<RRepo>) -> List {
 
 /// The same repository with a new virtual chunk authorisation map (no
 /// re-read of the repository; config unchanged).
+/// @noRd
 #[extendr]
 fn ic_repo_reauthorize_(repo: ExternalPtr<RRepo>, authorize_json: &str) -> R<ExternalPtr<RRepo>> {
     let auth = authorize_map(authorize_json)?;
@@ -157,27 +161,32 @@ fn ic_repo_reauthorize_(repo: ExternalPtr<RRepo>, authorize_json: &str) -> R<Ext
     Ok(ExternalPtr::new(RRepo { inner: Arc::new(r) }))
 }
 
+/// @noRd
 #[extendr]
 fn ic_repo_exists_(st: ExternalPtr<RStorage>) -> R<bool> {
     block_on(Repository::exists(Arc::clone(&st.inner), None)).map_err(ic)
 }
 
+/// @noRd
 #[extendr]
 fn ic_repo_spec_version_(repo: ExternalPtr<RRepo>) -> i32 {
     repo.inner.spec_version() as i32
 }
 
+/// @noRd
 #[extendr]
 fn ic_repo_config_json_(repo: ExternalPtr<RRepo>) -> R<String> {
     serde_json::to_string(repo.inner.config()).map_err(arg)
 }
 
+/// @noRd
 #[extendr]
 fn ic_repo_save_config_(repo: ExternalPtr<RRepo>) -> R<()> {
     block_on(repo.inner.save_config()).map_err(ic)?;
     Ok(())
 }
 
+/// @noRd
 #[extendr]
 fn ic_branches_(repo: ExternalPtr<RRepo>) -> R<List> {
     let r = &repo.inner;
@@ -191,6 +200,7 @@ fn ic_branches_(repo: ExternalPtr<RRepo>) -> R<List> {
     })
 }
 
+/// @noRd
 #[extendr]
 fn ic_tags_(repo: ExternalPtr<RRepo>) -> R<List> {
     let r = &repo.inner;
@@ -204,6 +214,7 @@ fn ic_tags_(repo: ExternalPtr<RRepo>) -> R<List> {
     })
 }
 
+/// @noRd
 #[extendr]
 fn ic_ancestry_(repo: ExternalPtr<RRepo>, branch: &str, tag: &str, snapshot: &str) -> R<List> {
     let v = version(branch, tag, snapshot)?;
@@ -226,12 +237,14 @@ fn ic_ancestry_(repo: ExternalPtr<RRepo>, branch: &str, tag: &str, snapshot: &st
     })
 }
 
+/// @noRd
 #[extendr]
 fn ic_branch_create_(repo: ExternalPtr<RRepo>, name: &str, snapshot_id: &str) -> R<()> {
     let id = snap(snapshot_id)?;
     block_on(repo.inner.create_branch(name, &id)).map_err(ic)
 }
 
+/// @noRd
 #[extendr]
 fn ic_branch_reset_(repo: ExternalPtr<RRepo>, name: &str, to: &str, from: &str) -> R<()> {
     let to = snap(to)?;
@@ -239,22 +252,26 @@ fn ic_branch_reset_(repo: ExternalPtr<RRepo>, name: &str, to: &str, from: &str) 
     block_on(repo.inner.reset_branch(name, &to, from.as_ref())).map_err(ic)
 }
 
+/// @noRd
 #[extendr]
 fn ic_branch_delete_(repo: ExternalPtr<RRepo>, name: &str) -> R<()> {
     block_on(repo.inner.delete_branch(name)).map_err(ic)
 }
 
+/// @noRd
 #[extendr]
 fn ic_tag_create_(repo: ExternalPtr<RRepo>, name: &str, snapshot_id: &str) -> R<()> {
     let id = snap(snapshot_id)?;
     block_on(repo.inner.create_tag(name, &id)).map_err(ic)
 }
 
+/// @noRd
 #[extendr]
 fn ic_tag_delete_(repo: ExternalPtr<RRepo>, name: &str) -> R<()> {
     block_on(repo.inner.delete_tag(name)).map_err(ic)
 }
 
+/// @noRd
 #[extendr]
 fn ic_lookup_(repo: ExternalPtr<RRepo>, branch: &str, tag: &str) -> R<String> {
     let r = &repo.inner;
@@ -295,6 +312,7 @@ pub(crate) fn diff_list(d: Diff) -> List {
     )
 }
 
+/// @noRd
 #[extendr]
 fn ic_diff_(
     repo: ExternalPtr<RRepo>,
@@ -307,6 +325,7 @@ fn ic_diff_(
     Ok(diff_list(d))
 }
 
+/// @noRd
 #[extendr]
 fn ic_session_readonly_(repo: ExternalPtr<RRepo>, branch: &str, tag: &str, snapshot: &str) -> R<ExternalPtr<RSession>> {
     let v = version(branch, tag, snapshot)?;
@@ -314,6 +333,7 @@ fn ic_session_readonly_(repo: ExternalPtr<RRepo>, branch: &str, tag: &str, snaps
     Ok(wrap_session(s))
 }
 
+/// @noRd
 #[extendr]
 fn ic_session_writable_(repo: ExternalPtr<RRepo>, branch: &str) -> R<ExternalPtr<RSession>> {
     let s = block_on(repo.inner.writable_session(branch)).map_err(ic)?;

@@ -1,7 +1,7 @@
 split_repo <- function(env = parent.frame()) {
-  skip_if_no_fixtures(); skip_if_not_installed("RSQLite"); skip_if_not_installed("blob")
-  fx <- manifest()$fixtures$virtual_v2
-  src <- ic_session_readonly(ic_repo_open(fx_path("virtual_v2"), authorize = fx$virtual_prefix))
+  skip_if_not_installed("RSQLite"); skip_if_not_installed("blob")
+  fx <- local_vfx(env); fx$virtual_prefix <- fx$auth
+  src <- ic_session_readonly(ic_repo_open(fx$path, authorize = fx$virtual_prefix))
   br <- ic_to_byterefs(src)
   rp <- file.path(withr::local_tempdir(.local_envir = env), "r")
   ic_repo_from_byterefs(br, rp, manifest_split = c("0" = 1), authorize = fx$virtual_prefix, checksums = FALSE)

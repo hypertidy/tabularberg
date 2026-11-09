@@ -41,6 +41,7 @@ fn path(p: &str) -> R<Path> {
 
 // ---- info ---------------------------------------------------------------
 
+/// @noRd
 #[extendr]
 fn ic_session_info_(s: ExternalPtr<RSession>) -> List {
     let g = s.session.blocking_read();
@@ -59,6 +60,7 @@ fn ic_session_info_(s: ExternalPtr<RSession>) -> List {
     )
 }
 
+/// @noRd
 #[extendr]
 fn ic_status_(s: ExternalPtr<RSession>) -> R<List> {
     let d = block_on(async { s.session.read().await.status().await }).map_err(ic)?;
@@ -72,6 +74,7 @@ fn is_missing(e: &icechunk::store::StoreError) -> bool {
 }
 
 /// Whole value, or a byte range when offset >= 0 (length < 0: to end).
+/// @noRd
 #[extendr]
 fn ic_get_(s: ExternalPtr<RSession>, k: &str, offset: f64, length: f64) -> R<Robj> {
     let br = if offset < 0.0 {
@@ -89,9 +92,10 @@ fn ic_get_(s: ExternalPtr<RSession>, k: &str, offset: f64, length: f64) -> R<Rob
 }
 
 /// Concurrent gets; list of raw (NULL where the key is absent).
+/// @noRd
 #[extendr]
 fn ic_get_many_(s: ExternalPtr<RSession>, keys: Strings) -> R<List> {
-    let ks: Vec<String> = keys.iter().map(|k| key(k.as_str())).collect();
+    let ks: Vec<String> = keys.iter().map(|k| key(&*k)).collect();
     let res: Vec<std::result::Result<Bytes, icechunk::store::StoreError>> = block_on(async {
         futures::stream::iter(ks.iter().map(|k| s.store.get(k, &ByteRange::ALL)))
             .buffered(64)
@@ -109,23 +113,27 @@ fn ic_get_many_(s: ExternalPtr<RSession>, keys: Strings) -> R<List> {
     Ok(List::from_values(out))
 }
 
+/// @noRd
 #[extendr]
 fn ic_set_(s: ExternalPtr<RSession>, k: &str, value: Raw) -> R<()> {
     let b = Bytes::copy_from_slice(value.as_slice());
     block_on(s.store.set(&key(k), b)).map_err(ic)
 }
 
+/// @noRd
 #[extendr]
 fn ic_exists_(s: ExternalPtr<RSession>, k: &str) -> R<bool> {
     block_on(s.store.exists(&key(k))).map_err(ic)
 }
 
+/// @noRd
 #[extendr]
 fn ic_delete_(s: ExternalPtr<RSession>, k: &str) -> R<()> {
     block_on(s.store.delete(&key(k))).map_err(ic)
 }
 
 /// mode "prefix": all keys under prefix (recursive); "dir": one level.
+/// @noRd
 #[extendr]
 fn ic_list_(s: ExternalPtr<RSession>, prefix: &str, mode: &str) -> R<Vec<String>> {
     let p = prefix.trim_start_matches('/');
@@ -140,6 +148,7 @@ fn ic_list_(s: ExternalPtr<RSession>, prefix: &str, mode: &str) -> R<Vec<String>
 }
 
 /// etag ("" none) or last_modified (seconds since epoch, < 0 none) checksum.
+/// @noRd
 #[extendr]
 fn ic_set_virtual_ref_(
     s: ExternalPtr<RSession>,
@@ -166,6 +175,7 @@ fn ic_set_virtual_ref_(
 /// Vectorised virtual refs for one array: coords is an n x ndim integer
 /// matrix of 0-based chunk indices; etag (""/NA none) takes precedence
 /// over last_modified (NA none) as the checksum.
+/// @noRd
 #[extendr]
 fn ic_set_virtual_refs_(
     s: ExternalPtr<RSession>,
@@ -187,7 +197,7 @@ fn ic_set_virtual_refs_(
     {
         return Err(arg("coords (n x ndim), locations, offsets, lengths, etags, last_modified must agree"));
     }
-    let cv: Vec<i32> = coords.iter().map(|x| x.inner()).collect();
+    let cv: Vec<i32> = coords.iter().map(|x| x.0).collect();
     let mut refs = Vec::with_capacity(n);
     for i in 0..n {
         let mut c = Vec::with_capacity(nd);
@@ -198,14 +208,14 @@ fn ic_set_virtual_refs_(
             }
             c.push(v as u32);
         }
-        let loc = VirtualChunkLocation::from_url(locations.elt(i).as_str())
+        let loc = VirtualChunkLocation::from_url(&*locations.elt(i))
             .map_err(|e| arg(format!("row {}: bad location: {e}", i + 1)))?;
         let e = etags.elt(i);
         let lm = last_modified.elt(i);
-        let checksum = if !e.is_na() && !e.as_str().is_empty() {
-            Some(Checksum::ETag(icechunk::storage::ETag(e.as_str().to_string())))
-        } else if !lm.is_na() && lm.inner() >= 0.0 {
-            Some(Checksum::LastModified(SecondsSinceEpoch(lm.inner() as u32)))
+        let checksum = if !e.is_na() && !(&*e).is_empty() {
+            Some(Checksum::ETag(icechunk::storage::ETag((&*e).to_string())))
+        } else if !lm.is_na() && lm.0 >= 0.0 {
+            Some(Checksum::LastModified(SecondsSinceEpoch(lm.0 as u32)))
         } else {
             None
         };
@@ -213,8 +223,8 @@ fn ic_set_virtual_refs_(
             ChunkIndices(c),
             VirtualChunkRef {
                 location: loc,
-                offset: offsets.elt(i).inner() as u64,
-                length: lengths.elt(i).inner() as u64,
+                offset: offsets.elt(i).0 as u64,
+                length: lengths.elt(i).0 as u64,
                 checksum,
             },
         ));
@@ -237,6 +247,7 @@ fn props(json: &str) -> R<icechunk::format::snapshot::SnapshotProperties> {
 }
 
 /// how: "commit" | "amend" | "flush" (anonymous snapshot)
+/// @noRd
 #[extendr]
 fn ic_commit_(s: ExternalPtr<RSession>, message: &str, metadata_json: &str, how: &str, allow_empty: bool) -> R<String> {
     let p = props(metadata_json)?;
@@ -255,6 +266,7 @@ fn ic_commit_(s: ExternalPtr<RSession>, message: &str, metadata_json: &str, how:
     })
 }
 
+/// @noRd
 #[extendr]
 fn ic_discard_(s: ExternalPtr<RSession>) -> R<()> {
     block_on(async { s.session.write().await.discard_changes() }).map_err(ic)
@@ -262,6 +274,7 @@ fn ic_discard_(s: ExternalPtr<RSession>) -> R<()> {
 
 /// solver "detect" (fail on any conflict) or "basic" with on_chunk
 /// "ours" | "theirs" | "fail".
+/// @noRd
 #[extendr]
 fn ic_rebase_(s: ExternalPtr<RSession>, solver: &str, on_chunk: &str) -> R<()> {
     block_on(async {
@@ -288,6 +301,7 @@ static MANIFEST_CONCURRENCY: std::sync::atomic::AtomicUsize = std::sync::atomic:
 
 /// Set how many manifests are fetched concurrently (1 = sequential, as
 /// Icechunk's own iterators do). Returns the previous value.
+/// @noRd
 #[extendr]
 fn ic_set_manifest_concurrency_(n: i32) -> i32 {
     MANIFEST_CONCURRENCY.swap(n.max(1) as usize, std::sync::atomic::Ordering::Relaxed) as i32
@@ -424,6 +438,7 @@ fn collect_chunks(s: &RSession, p: &Path, ranges: &Robj) -> R<Vec<(ChunkIndices,
 /// `data` (inline bytes, NULL otherwise). `ranges` (NULL, or a list of
 /// c(lo, hi) 0-based chunk index ranges, hi exclusive) restricts to that
 /// slab and reads only the manifests that cover it.
+/// @noRd
 #[extendr]
 fn ic_refs_columns_(s: ExternalPtr<RSession>, array_path: &str, ranges: Robj) -> R<List> {
     let p = path(array_path)?;
@@ -522,6 +537,7 @@ fn ic_refs_columns_(s: ExternalPtr<RSession>, array_path: &str, ranges: Robj) ->
 /// unmatched file:// URL becomes a plain path). Native chunks have null
 /// path and data. Writes the stream into the ArrowArrayStream at
 /// `stream_addr` (from nanoarrow). Returns list(batches, native, rows).
+/// @noRd
 #[extendr]
 fn ic_refs_arrow_(
     s: ExternalPtr<RSession>,
@@ -542,7 +558,7 @@ fn ic_refs_arrow_(
     let mut rules: Vec<(String, String)> = rules_replacement
         .iter()
         .zip(rules_prefix.iter())
-        .map(|(r, q)| (r.as_str().to_string(), q.as_str().to_string()))
+        .map(|(r, q)| ((&*r).to_string(), (&*q).to_string()))
         .collect();
     rules.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
     let unresolve = |u: &str| -> String {
@@ -661,6 +677,7 @@ fn chunk_key(p: &Path, c: &ChunkIndices) -> String {
 /// (native | virtual | inline), location (virtual URL, or repo-relative
 /// "chunks/<id>" for native), offset, length, checksum, and (optionally)
 /// the inline bytes.
+/// @noRd
 #[extendr]
 fn ic_chunk_refs_(s: ExternalPtr<RSession>, array_path: &str, include_inline: bool) -> R<List> {
     let mut a_path = Vec::new();
@@ -745,6 +762,7 @@ fn ic_chunk_refs_(s: ExternalPtr<RSession>, array_path: &str, include_inline: bo
 }
 
 /// Nodes (groups and arrays) with shape and chunk counts.
+/// @noRd
 #[extendr]
 fn ic_nodes_(s: ExternalPtr<RSession>) -> R<List> {
     let mut p = Vec::new();
@@ -794,6 +812,7 @@ fn ic_nodes_(s: ExternalPtr<RSession>) -> R<List> {
     Ok(list!(path = p, node_type = t, shape = shape, num_chunks = nchunks, dimension_names = dims))
 }
 
+/// @noRd
 #[extendr]
 fn ic_virtual_locations_(s: ExternalPtr<RSession>) -> R<Vec<String>> {
     block_on(async {
@@ -838,6 +857,7 @@ pub fn decode_handoff(b: &[u8]) -> std::result::Result<&[u8], String> {
     Ok(&b[6 + n..])
 }
 
+/// @noRd
 #[extendr]
 fn ic_session_bytes_(s: ExternalPtr<RSession>) -> R<Raw> {
     let g = s.session.blocking_read();
@@ -845,6 +865,7 @@ fn ic_session_bytes_(s: ExternalPtr<RSession>) -> R<Raw> {
     Ok(Raw::from_bytes(&encode_handoff(&payload)))
 }
 
+/// @noRd
 #[extendr]
 fn ic_session_from_bytes_(b: Raw) -> R<ExternalPtr<RSession>> {
     let payload = decode_handoff(b.as_slice()).map_err(|e| tagged("version", e))?;
@@ -852,12 +873,14 @@ fn ic_session_from_bytes_(b: Raw) -> R<ExternalPtr<RSession>> {
     Ok(wrap_session(s))
 }
 
+/// @noRd
 #[extendr]
 fn ic_session_fork_(s: ExternalPtr<RSession>) -> R<ExternalPtr<RSession>> {
     let f = block_on(async { s.session.read().await.fork().await }).map_err(ic)?;
     Ok(wrap_session(f))
 }
 
+/// @noRd
 #[extendr]
 fn ic_session_merge_(s: ExternalPtr<RSession>, b: Raw) -> R<()> {
     let payload = decode_handoff(b.as_slice()).map_err(|e| tagged("version", e))?;
@@ -865,6 +888,7 @@ fn ic_session_merge_(s: ExternalPtr<RSession>, b: Raw) -> R<()> {
     block_on(async { s.session.write().await.merge(other).await }).map_err(ic)
 }
 
+/// @noRd
 #[extendr]
 fn ic_handoff_version_() -> &'static str {
     ICECHUNK_CRATE_VERSION

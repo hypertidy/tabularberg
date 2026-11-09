@@ -23,6 +23,8 @@ Suggests:
     RSQLite,
     duckdb,
     nanoarrow,
+    dbplyr,
+    dplyr,
     arrow,
     nanoparquet,
     blob,
