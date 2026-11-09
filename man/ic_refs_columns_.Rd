@@ -4,14 +4,18 @@
 \alias{ic_refs_columns_}
 \title{One array's chunks as columns: \code{dims} (list of integer vectors, one per
 dimension, 0-based chunk indices), \code{kind}, \code{location}, \code{offset},
-\code{length}, \code{etag}, \code{last_modified}, \code{key}, and \code{data} (inline bytes, NULL
-otherwise). Built without per-row strings for the coordinates.}
+\code{length}, \code{etag}, \code{last_modified}, \code{key} ("" for virtual chunks), and
+\code{data} (inline bytes, NULL otherwise). \code{ranges} (NULL, or a list of
+c(lo, hi) 0-based chunk index ranges, hi exclusive) restricts to that
+slab and reads only the manifests that cover it.}
 \usage{
-ic_refs_columns_(s, array_path)
+ic_refs_columns_(s, array_path, ranges)
 }
 \description{
 One array's chunks as columns: \code{dims} (list of integer vectors, one per
 dimension, 0-based chunk indices), \code{kind}, \code{location}, \code{offset},
-\code{length}, \code{etag}, \code{last_modified}, \code{key}, and \code{data} (inline bytes, NULL
-otherwise). Built without per-row strings for the coordinates.
+\code{length}, \code{etag}, \code{last_modified}, \code{key} ("" for virtual chunks), and
+\code{data} (inline bytes, NULL otherwise). \code{ranges} (NULL, or a list of
+c(lo, hi) 0-based chunk index ranges, hi exclusive) restricts to that
+slab and reads only the manifests that cover it.
 }

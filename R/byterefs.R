@@ -554,18 +554,21 @@ ic_write_byterefs <- function(session, br, target = NULL, checksums = TRUE, vali
 #' @param message commit message.
 #' @param authorize credentials for the containers; default inferred from
 #'   each prefix's scheme (see [ic_repo_open()]).
+#' @param manifest_split manifest splitting, see [ic_repo_create()]; e.g.
+#'   `c(time = 1)` for a daily series, so a day's refs are one manifest.
 #' @param ... passed to [ic_write_byterefs()].
 #' @return the `icechunk_repo` (invisibly), with attributes `snapshot`
 #'   and `summary`.
 #' @export
-ic_repo_from_byterefs <- function(br, storage, target = NULL, message = NULL, authorize = NULL, ...) {
+ic_repo_from_byterefs <- function(br, storage, target = NULL, message = NULL, authorize = NULL,
+                                  manifest_split = NULL, ...) {
   opened <- !inherits(br, "byterefs")
   br <- ic_byterefs_read(br)
   if (opened && !is.null(br$close)) on.exit(br$close(), add = TRUE)
   target <- .br_target(br, target)
   cont <- ic_byterefs_containers(br, target)
   auth <- authorize %||% attr(cont, "prefixes")
-  repo <- ic_repo_create(storage, containers = cont, authorize = auth)
+  repo <- ic_repo_create(storage, containers = cont, authorize = auth, manifest_split = manifest_split)
   ic_repo_save_config(repo)
   s <- ic_session_writable(repo, "main")
   summ <- ic_write_byterefs(s, br, target = target, ...)
@@ -599,7 +602,7 @@ ic_repo_from_byterefs <- function(br, storage, target = NULL, message = NULL, au
 }
 
 # one array -> list(arow = arrays row (list), refs = refs data frame or NULL)
-.br_array <- function(session, p, root, native = TRUE) {
+.br_array <- function(session, p, root, native = TRUE, ranges = NULL) {
   rules <- root$rules; brx <- root$brx
   arrs <- list(); refs <- list()
     nm <- sub("^/", "", p)
@@ -611,7 +614,7 @@ ic_repo_from_byterefs <- function(br, storage, target = NULL, message = NULL, au
     dims <- unlist(zj$dimension_names) %||% paste0("dim_", seq_along(shape) - 1L)
     fill <- .br_fill_token(zj$fill_value)
     attrs <- zj$attributes %||% list()
-    cr <- .ic(ic_refs_columns_(session$ptr, p))
+    cr <- .ic(ic_refs_columns_(session$ptr, p, ranges))
     ncr <- length(cr$kind)
     one_chunk <- identical(shape, chunks) && length(shape) == 1L
     coordlike <- one_chunk && ncr == 1L && cr$kind != "virtual" && nm %in% dims
@@ -889,4 +892,48 @@ ic_byterefs_compare <- function(x, y, target = NULL) {
     return(.br_unpack(.br_pack(af$start + af$step * (seq_len(shape[1]) - 1), a$dtype), a$dtype, shape[1]))
   }
   .br_unpack(a$values[[1]], a$dtype, prod(shape))
+}
+
+#' Chunk references of one array as an Arrow stream
+#'
+#' The byterefs refs view of an array (`dim_0..`, `present`, `path`,
+#' `offset`, `size`, `info`, `data`), built in Rust as Arrow record batches
+#' and handed over as a `nanoarrow_array_stream`, without R vectors in
+#' between. `path` is dictionary-encoded (one entry per source), `offset`
+#' and `size` are int64, as the byterefs spec has them. Paths have the
+#' repository's remap rules undone (see [ic_write_byterefs()]); native
+#' chunks (bytes held by the repository) have no path and no `data` (fetch
+#' them with [ic_get()]; [ic_to_byterefs()] includes them).
+#'
+#' Consume with `nanoarrow::convert_array_stream()`, `arrow::as_arrow_table()`
+#' or `duckdb::duckdb_register_arrow()`.
+#'
+#' @param session an `icechunk_session`.
+#' @param path array path.
+#' @param chunks optional slab, `list(dim_0 = c(lo, hi), ...)` of chunk
+#'   indices (hi exclusive); only the manifests covering it are read.
+#' @param batch_rows rows per record batch.
+#' @return a `nanoarrow_array_stream`.
+#' @export
+ic_refs_arrow <- function(session, path, chunks = NULL, batch_rows = 65536L) {
+  .need("nanoarrow")
+  p <- if (startsWith(path, "/")) path else paste0("/", path)
+  rules <- .br_root(session)$rules
+  ranges <- NULL
+  if (!is.null(chunks)) {
+    n <- ic_nodes(session)
+    i <- match(p, n$path)
+    if (is.na(i)) stop("no array '", path, "'", call. = FALSE)
+    ranges <- .dbi_chunks_ranges(chunks, length(strsplit(n$shape[i], ",", fixed = TRUE)[[1]]))
+  }
+  .refs_arrow(session, p, ranges, rules, batch_rows)
+}
+
+# -> nanoarrow stream with attribute "info" = list(batches, native, rows)
+.refs_arrow <- function(session, p, ranges, rules, batch_rows = 65536L) {
+  stream <- nanoarrow::nanoarrow_allocate_array_stream()
+  info <- .ic(ic_refs_arrow_(session$ptr, p, ranges, as.character(rules$prefix), as.character(rules$replacement),
+                             as.integer(batch_rows), nanoarrow::nanoarrow_pointer_addr_chr(stream)))
+  attr(stream, "info") <- info
+  stream
 }

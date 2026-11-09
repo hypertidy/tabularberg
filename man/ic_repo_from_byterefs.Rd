@@ -10,6 +10,7 @@ ic_repo_from_byterefs(
   target = NULL,
   message = NULL,
   authorize = NULL,
+  manifest_split = NULL,
   ...
 )
 }
@@ -24,6 +25,9 @@ ic_repo_from_byterefs(
 
 \item{authorize}{credentials for the containers; default inferred from
 each prefix's scheme (see \code{\link[=ic_repo_open]{ic_repo_open()}}).}
+
+\item{manifest_split}{manifest splitting, see \code{\link[=ic_repo_create]{ic_repo_create()}}; e.g.
+\code{c(time = 1)} for a daily series, so a day's refs are one manifest.}
 
 \item{...}{passed to \code{\link[=ic_write_byterefs]{ic_write_byterefs()}}.}
 }

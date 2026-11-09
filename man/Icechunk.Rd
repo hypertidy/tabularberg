@@ -47,6 +47,8 @@ Icechunk()
   create = FALSE,
   target = NULL,
   sql = c("sqlite", "duckdb"),
+  pushdown = TRUE,
+  arrow = NA,
   ...
 )
 
@@ -54,7 +56,7 @@ Icechunk()
 
 \S4method{dbExistsTable}{IcechunkConnection,character}(conn, name, ...)
 
-\S4method{dbReadTable}{IcechunkConnection,character}(conn, name, ...)
+\S4method{dbReadTable}{IcechunkConnection,character}(conn, name, ..., chunks = NULL)
 
 \S4method{dbListFields}{IcechunkConnection,character}(conn, name, ...)
 
@@ -131,11 +133,28 @@ faster on large refs tables. In DuckDB \code{offset} and \code{array} are
 reserved words, so quote those columns (\code{"offset"}, \code{"array"}); SQL
 written that way runs on both engines.}
 
+\item{pushdown}{for a statement over one \verb{refs_<array>} table with a
+plain conjunctive \code{WHERE} on \code{dim_k} (=, <, <=, >, >=, BETWEEN, IN),
+read only that slab of chunks (and, with split manifests, only the
+manifests covering it) instead of the whole table. The SQL still
+applies the full predicate, so results do not change.}
+
+\item{arrow}{with \code{sql = "duckdb"}, hand \verb{refs_<array>} tables to DuckDB
+as Arrow record batches built in Rust (\code{\link[=ic_refs_arrow]{ic_refs_arrow()}}) rather than
+R vectors: less memory, faster first query. Tables with native chunks
+fall back to the R path, so results are the same. \code{NA} (default):
+when nanoarrow and arrow are installed.}
+
 \item{...}{unused.}
 
 \item{conn}{an \code{IcechunkConnection}.}
 
 \item{name}{table name.}
+
+\item{chunks}{for \code{dbReadTable()} on \verb{refs_<array>}: a slab of chunk
+indices, \code{list(dim_0 = c(lo, hi), ...)} (hi exclusive; a single number
+is one index). Only the manifests covering it are read when the
+repository splits manifests (see \code{manifest_split} in \code{\link[=ic_repo_create]{ic_repo_create()}}).}
 
 \item{statement}{SQL (read-only: SELECT over the tables it names).}
 

@@ -33,7 +33,7 @@ ic_storage_desc_ <- function(st) .Call(wrap__ic_storage_desc_, st)
 
 ic_repo_open_ <- function(st, containers_json, authorize_json) .Call(wrap__ic_repo_open_, st, containers_json, authorize_json)
 
-ic_repo_create_ <- function(st, containers_json, authorize_json, spec_version) .Call(wrap__ic_repo_create_, st, containers_json, authorize_json, spec_version)
+ic_repo_create_ <- function(st, containers_json, authorize_json, spec_version, split_json) .Call(wrap__ic_repo_create_, st, containers_json, authorize_json, spec_version, split_json)
 
 ic_repo_exists_ <- function(st) .Call(wrap__ic_repo_exists_, st)
 
@@ -111,9 +111,22 @@ ic_chunk_refs_ <- function(s, array_path, include_inline) .Call(wrap__ic_chunk_r
 
 #' One array's chunks as columns: `dims` (list of integer vectors, one per
 #' dimension, 0-based chunk indices), `kind`, `location`, `offset`,
-#' `length`, `etag`, `last_modified`, `key`, and `data` (inline bytes, NULL
-#' otherwise). Built without per-row strings for the coordinates.
-ic_refs_columns_ <- function(s, array_path) .Call(wrap__ic_refs_columns_, s, array_path)
+#' `length`, `etag`, `last_modified`, `key` ("" for virtual chunks), and
+#' `data` (inline bytes, NULL otherwise). `ranges` (NULL, or a list of
+#' c(lo, hi) 0-based chunk index ranges, hi exclusive) restricts to that
+#' slab and reads only the manifests that cover it.
+ic_refs_columns_ <- function(s, array_path, ranges) .Call(wrap__ic_refs_columns_, s, array_path, ranges)
+
+#' The byterefs refs view of one array as an Arrow C stream: columns
+#' dim_0..dim_{n-1} (int32), present (int32), path (dictionary<int32, utf8>:
+#' the location with the remap rules undone), offset and size (int64),
+#' info (utf8), data (binary, inline chunks), in record batches of
+#' `batch_rows`. `rules_prefix` / `rules_replacement` are the remap rules
+#' (a location starting with a replacement gets the prefix back; an
+#' unmatched file:// URL becomes a plain path). Native chunks have null
+#' path and data. Writes the stream into the ArrowArrayStream at
+#' `stream_addr` (from nanoarrow). Returns list(batches, native, rows).
+ic_refs_arrow_ <- function(s, array_path, ranges, rules_prefix, rules_replacement, batch_rows, stream_addr) .Call(wrap__ic_refs_arrow_, s, array_path, ranges, rules_prefix, rules_replacement, batch_rows, stream_addr)
 
 #' Nodes (groups and arrays) with shape and chunk counts.
 ic_nodes_ <- function(s) .Call(wrap__ic_nodes_, s)

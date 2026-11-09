@@ -71,11 +71,22 @@ setClass("IcechunkResult", contains = "DBIResult", slots = c(state = "environmen
 #'   faster on large refs tables. In DuckDB `offset` and `array` are
 #'   reserved words, so quote those columns (`"offset"`, `"array"`); SQL
 #'   written that way runs on both engines.
+#' @param arrow with `sql = "duckdb"`, hand `refs_<array>` tables to DuckDB
+#'   as Arrow record batches built in Rust ([ic_refs_arrow()]) rather than
+#'   R vectors: less memory, faster first query. Tables with native chunks
+#'   fall back to the R path, so results are the same. `NA` (default):
+#'   when nanoarrow and arrow are installed.
+#' @param pushdown for a statement over one `refs_<array>` table with a
+#'   plain conjunctive `WHERE` on `dim_k` (=, <, <=, >, >=, BETWEEN, IN),
+#'   read only that slab of chunks (and, with split manifests, only the
+#'   manifests covering it) instead of the whole table. The SQL still
+#'   applies the full predicate, so results do not change.
 #' @param ... unused.
 #' @export
 setMethod("dbConnect", "IcechunkDriver", function(drv, storage, branch = NULL, tag = NULL, snapshot = NULL,
                                                   authorize = NULL, containers = NULL, create = FALSE,
-                                                  target = NULL, sql = c("sqlite", "duckdb"), ...) {
+                                                  target = NULL, sql = c("sqlite", "duckdb"), pushdown = TRUE,
+                                                  arrow = NA, ...) {
   sql <- match.arg(sql)
   if (sum(!is.null(branch), !is.null(tag), !is.null(snapshot)) > 1L) {
     stop("pin the connection to one of branch, tag or snapshot", call. = FALSE)
@@ -88,7 +99,10 @@ setMethod("dbConnect", "IcechunkDriver", function(drv, storage, branch = NULL, t
   state <- new.env(parent = emptyenv())
   state$repo <- repo; state$branch <- branch; state$tag <- tag; state$snapshot <- snapshot
   state$target <- target; state$in_tx <- FALSE; state$valid <- TRUE; state$cache <- list()
-  state$engine <- sql
+  state$engine <- sql; state$pushdown <- pushdown
+  if (is.na(arrow)) arrow <- sql == "duckdb" && requireNamespace("nanoarrow", quietly = TRUE) &&
+    requireNamespace("arrow", quietly = TRUE)
+  state$arrow <- isTRUE(arrow) && sql == "duckdb"
   state$session <- .dbi_readonly(state)
   new("IcechunkConnection", state = state)
 })
@@ -108,20 +122,109 @@ setMethod("dbConnect", "IcechunkDriver", function(drv, storage, branch = NULL, t
   state$cache$root %||% (state$cache$root <- .br_root(state$session))
 }
 
+.dbi_array1 <- function(state, nm) {
+  if (!is.null(state$cache$arr[[nm]])) return(state$cache$arr[[nm]])
+  if (!paste0("/", nm) %in% ic_nodes(state$session)$path) return(NULL)
+  x <- .br_array(state$session, paste0("/", nm), .dbi_root(state), native = TRUE)
+  state$cache$arr[[nm]] <- x
+  x
+}
+
 .dbi_arrays <- function(state) {
-  if (!is.null(state$cache$array_rows)) return(state$cache$array_rows)
   nodes <- ic_nodes(state$session)
-  nodes <- nodes[nodes$type == "array", , drop = FALSE]
-  root <- .dbi_root(state)
-  res <- lapply(nodes$path, function(p) .br_array(state$session, p, root, native = TRUE))
-  names(res) <- vapply(res, function(x) x$arow$array, "")
-  state$cache$array_rows <- res
+  nms <- sub("^/", "", nodes$path[nodes$type == "array"])
+  res <- lapply(nms, function(nm) .dbi_array1(state, nm))
+  names(res) <- nms
   res
 }
 
 .dbi_data_arrays <- function(state) {
   a <- .dbi_arrays(state)
   names(a)[vapply(a, function(x) identical(x$arow$kind, "data"), logical(1))]
+}
+
+# refs_<array> as a data frame; `ranges` (list of c(lo, hi) chunk index
+# ranges, hi exclusive) reads only that slab, fetching only the manifests
+# that cover it
+.dbi_refs_table <- function(state, nm, ranges = NULL) {
+  a <- if (is.null(ranges)) .dbi_array1(state, nm) else {
+    if (!paste0("/", nm) %in% ic_nodes(state$session)$path) NULL
+    else .br_array(state$session, paste0("/", nm), .dbi_root(state), native = TRUE, ranges = ranges)
+  }
+  if (is.null(a)) stop("no array '", nm, "'", call. = FALSE)
+  r <- a$refs
+  nd <- length(jsonlite::fromJSON(a$arow$shape))
+  if (is.null(r)) {
+    r <- as.data.frame(stats::setNames(rep(list(integer()), nd), paste0("dim_", seq_len(nd) - 1L)))
+    r$present <- integer(); r$path <- character(); r$offset <- numeric(); r$size <- numeric()
+    r$info <- character(); r$data <- list()
+  }
+  r <- r[, c(paste0("dim_", seq_len(nd) - 1L), "present", "path", "offset", "size", "info", "data")]
+  r$data <- blob_list(r$data, check = FALSE)
+  rownames(r) <- NULL
+  r
+}
+
+.dbi_ndim <- function(state, nm) {
+  n <- ic_nodes(state$session)
+  i <- match(paste0("/", nm), n$path)
+  if (is.na(i) || is.na(n$shape[i])) return(NA_integer_)
+  length(strsplit(n$shape[i], ",", fixed = TRUE)[[1]])
+}
+
+# chunks = list(dim_0 = c(lo, hi), ...) -> positional ranges
+.dbi_chunks_ranges <- function(chunks, nd) {
+  rng <- rep(list(c(0, Inf)), nd)
+  for (k in names(chunks)) {
+    d <- as.integer(sub("^dim_", "", k))
+    if (is.na(d) || d < 0 || d >= nd) stop("chunks names are dim_0..dim_", nd - 1L, call. = FALSE)
+    v <- as.numeric(chunks[[k]])
+    rng[[d + 1L]] <- if (length(v) == 1L) c(v, v + 1) else v[1:2]
+  }
+  rng
+}
+
+# Conservative pushdown: a single refs_<array> table, a plain conjunctive
+# WHERE (no OR / NOT / CASE / subquery / set operation), and integer
+# comparisons on dim_k. Returns chunk ranges (a superset of the rows the
+# WHERE keeps; the SQL still applies the full predicate) or NULL.
+.dbi_slab <- function(statement, table, nd) {
+  st <- gsub("'[^']*'", "''", statement)                       # ignore string literals
+  if (grepl("\\b(OR|NOT|CASE|UNION|EXCEPT|INTERSECT)\\b", st, ignore.case = TRUE, perl = TRUE)) return(NULL)
+  if (grepl("\\(\\s*SELECT\\b", st, ignore.case = TRUE, perl = TRUE)) return(NULL)
+  q <- paste0("\\Q", table, "\\E")
+  if (lengths(regmatches(st, gregexpr(paste0("(^|[^A-Za-z0-9_])[\"`\\[]?", q, "[\"`\\]]?([^A-Za-z0-9_/]|$)"), st, perl = TRUE))) != 1L) return(NULL)
+  w <- regmatches(st, regexec("(?is)\\bWHERE\\b(.*?)(\\bGROUP\\s+BY\\b|\\bORDER\\s+BY\\b|\\bLIMIT\\b|\\bHAVING\\b|\\bWINDOW\\b|\\bQUALIFY\\b|$)", st, perl = TRUE))[[1]]
+  if (length(w) < 2L) return(NULL)
+  w <- w[2]
+  # dbplyr asks for a table's columns with WHERE (0 = 1): an empty slab
+  if (grepl("(^|[^\\w.])0\\s*=\\s*1([^\\w.]|$)", w, perl = TRUE)) return(rep(list(c(0, 0)), nd))
+  int <- "(-?\\d+)(?:\\.0+)?(?![\\d.eE])"
+  col <- function(k) paste0("(?:\\w+\\.)?[\"`]?dim_", k, "[\"`]?")
+  rng <- rep(list(c(0, Inf)), nd); hit <- FALSE
+  num <- function(m, i) as.numeric(m[, i])
+  for (k in seq_len(nd) - 1L) {
+    lo <- 0; hi <- Inf
+    m <- regmatches(w, gregexpr(paste0("(?i)", col(k), "\\s+BETWEEN\\s+", int, "\\s+AND\\s+", int), w, perl = TRUE))[[1]]
+    for (x in m) { v <- as.numeric(regmatches(x, gregexpr("-?\\d+(?:\\.0+)?(?![\\w])", x, perl = TRUE))[[1]]); v <- tail(v, 2); lo <- max(lo, v[1]); hi <- min(hi, v[2] + 1) }
+    w2 <- gsub(paste0("(?i)", col(k), "\\s+BETWEEN\\s+", int, "\\s+AND\\s+", int), " ", w, perl = TRUE)
+    m <- regmatches(w2, gregexpr(paste0("(?i)", col(k), "\\s+IN\\s*\\(([-\\d.,\\s]+)\\)"), w2, perl = TRUE))[[1]]
+    for (x in m) { v <- as.numeric(regmatches(sub("^[^(]*\\(", "", x), gregexpr("-?\\d+(?:\\.0+)?", sub("^[^(]*\\(", "", x), perl = TRUE))[[1]]); lo <- max(lo, min(v)); hi <- min(hi, max(v) + 1) }
+    m <- regmatches(w2, gregexpr(paste0(col(k), "\\s*(<=|>=|<>|!=|=|<|>)\\s*", int), w2, perl = TRUE))[[1]]
+    for (x in m) {
+      op <- regmatches(x, regexpr("<=|>=|<>|!=|=|<|>", x)); v <- as.numeric(regmatches(x, regexpr("-?\\d+(?:\\.0+)?\\s*$", x, perl = TRUE)))
+      switch(op, "=" = { lo <- max(lo, v); hi <- min(hi, v + 1) }, ">=" = lo <- max(lo, v), ">" = lo <- max(lo, v + 1),
+             "<=" = hi <- min(hi, v + 1), "<" = hi <- min(hi, v), NULL)
+    }
+    m <- regmatches(w2, gregexpr(paste0(int, "\\s*(<=|>=|=|<|>)\\s*", col(k), "(?![\\w])"), w2, perl = TRUE))[[1]]
+    for (x in m) {
+      op <- regmatches(x, regexpr("<=|>=|=|<|>", x)); v <- as.numeric(regmatches(x, regexpr("^\\s*-?\\d+", x)))
+      switch(op, "=" = { lo <- max(lo, v); hi <- min(hi, v + 1) }, "<=" = lo <- max(lo, v), "<" = lo <- max(lo, v + 1),
+             ">=" = hi <- min(hi, v + 1), ">" = hi <- min(hi, v), NULL)
+    }
+    if (lo > 0 || is.finite(hi)) { hit <- TRUE; rng[[k + 1L]] <- c(lo, max(lo, hi)) }
+  }
+  if (hit) rng else NULL
 }
 
 .DBI_FIXED <- c("meta", "arrays", "sources", "branches", "tags", "ancestry", "nodes")
@@ -170,19 +273,7 @@ setMethod("dbConnect", "IcechunkDriver", function(drv, storage, branch = NULL, t
     },
     {
       if (!startsWith(name, "refs_")) stop("no table '", name, "'", call. = FALSE)
-      nm <- substring(name, 6L)
-      a <- .dbi_arrays(state)[[nm]]
-      if (is.null(a)) stop("no array '", nm, "'", call. = FALSE)
-      r <- a$refs
-      nd <- length(jsonlite::fromJSON(a$arow$shape))
-      if (is.null(r)) {
-        r <- as.data.frame(stats::setNames(rep(list(integer()), nd), paste0("dim_", seq_len(nd) - 1L)))
-        r$present <- integer(); r$path <- character(); r$offset <- numeric(); r$size <- numeric()
-        r$info <- character(); r$data <- list()
-      }
-      r <- r[, c(paste0("dim_", seq_len(nd) - 1L), "present", "path", "offset", "size", "info", "data")]
-      r$data <- blob_list(r$data, check = FALSE)
-      r
+      .dbi_refs_table(state, substring(name, 6L))
     })
   rownames(out) <- NULL
   state$cache$tables[[name]] <- out
@@ -192,6 +283,10 @@ setMethod("dbConnect", "IcechunkDriver", function(drv, storage, branch = NULL, t
 #' @rdname Icechunk
 #' @param conn an `IcechunkConnection`.
 #' @param name table name.
+#' @param chunks for `dbReadTable()` on `refs_<array>`: a slab of chunk
+#'   indices, `list(dim_0 = c(lo, hi), ...)` (hi exclusive; a single number
+#'   is one index). Only the manifests covering it are read when the
+#'   repository splits manifests (see `manifest_split` in [ic_repo_create()]).
 #' @export
 setMethod("dbListTables", "IcechunkConnection", function(conn, ...) .dbi_tables(.dbi_check(conn)))
 
@@ -203,14 +298,26 @@ setMethod("dbExistsTable", c("IcechunkConnection", "character"), function(conn, 
 
 #' @rdname Icechunk
 #' @export
-setMethod("dbReadTable", c("IcechunkConnection", "character"), function(conn, name, ...) {
-  .dbi_read(.dbi_check(conn), name)
+setMethod("dbReadTable", c("IcechunkConnection", "character"), function(conn, name, ..., chunks = NULL) {
+  state <- .dbi_check(conn)
+  if (is.null(chunks)) return(.dbi_read(state, name))
+  if (!startsWith(name, "refs_")) stop("chunks = applies to refs_<array> tables", call. = FALSE)
+  nm <- substring(name, 6L)
+  nd <- .dbi_ndim(state, nm)
+  if (is.na(nd)) stop("no array '", nm, "'", call. = FALSE)
+  .dbi_refs_table(state, nm, .dbi_chunks_ranges(chunks, nd))
 })
 
 #' @rdname Icechunk
 #' @export
 setMethod("dbListFields", c("IcechunkConnection", "character"), function(conn, name, ...) {
-  names(.dbi_read(.dbi_check(conn), name))
+  state <- .dbi_check(conn)
+  if (startsWith(name, "refs_") && is.null(state$cache$tables[[name]])) {
+    nd <- .dbi_ndim(state, substring(name, 6L))
+    if (is.na(nd)) stop("no table '", name, "'", call. = FALSE)
+    return(names(.dbi_refs_table(state, substring(name, 6L), rep(list(c(0, 0)), nd))))
+  }
+  names(.dbi_read(state, name))
 })
 
 # ---- SQL ------------------------------------------------------------------------
@@ -224,7 +331,7 @@ setMethod("dbListFields", c("IcechunkConnection", "character"), function(conn, n
   tabs[hit]
 }
 
-.dbi_sql <- function(state, statement) {
+.dbi_sql <- function(state, statement, pushdown = isTRUE(state$pushdown)) {
   duck <- identical(state$engine, "duckdb")
   if (is.null(state$sql) || !DBI::dbIsValid(state$sql)) {
     if (duck) {
@@ -232,28 +339,62 @@ setMethod("dbListFields", c("IcechunkConnection", "character"), function(conn, n
       # in-memory only: keep DuckDB from creating ~/.duckdb state
       drv <- if ("shared_home" %in% names(formals(duckdb::duckdb))) duckdb::duckdb(shared_home = FALSE) else duckdb::duckdb()
       state$sql <- DBI::dbConnect(drv)
-    }
-    else { .need("RSQLite"); state$sql <- DBI::dbConnect(RSQLite::SQLite(), ":memory:") }
+    } else { .need("RSQLite"); state$sql <- DBI::dbConnect(RSQLite::SQLite(), ":memory:") }
     state$sql_loaded <- character()
   }
   key <- state$cache$key %||% (state$cache$key <- paste(ic_session_info(state$session)$snapshot_id, stats::runif(1)))
   if (!identical(state$sql_key, key)) {
-    for (t in state$sql_loaded) {
-      if (duck) duckdb::duckdb_unregister(state$sql, t) else DBI::dbRemoveTable(state$sql, t)
-    }
+    for (t in state$sql_loaded) .dbi_drop(state, t)
     state$sql_loaded <- character(); state$sql_key <- key
   }
-  for (t in setdiff(.dbi_sql_tables(state, statement), state$sql_loaded)) {
-    d <- .dbi_read(state, t)
-    if (duck) {
-      duckdb::duckdb_register(state$sql, t, d)
-    } else {
-      for (f in names(d)) if (inherits(d[[f]], "POSIXct")) d[[f]] <- format(d[[f]], "%Y-%m-%dT%H:%M:%OS3Z", tz = "UTC")
-      DBI::dbWriteTable(state$sql, t, d)
+  transient <- character()
+  need <- setdiff(.dbi_sql_tables(state, statement), state$sql_loaded)
+  for (t in need) {
+    if (t %in% c(state$sql_arrow, if (!identical(state$engine, "duckdb")) DBI::dbListTables(state$sql))) .dbi_drop(state, t)
+    slab <- NULL
+    if (pushdown && startsWith(t, "refs_") && is.null(state$cache$tables[[t]])) {
+      nd <- .dbi_ndim(state, substring(t, 6L))
+      if (!is.na(nd)) slab <- .dbi_slab(statement, t, nd)
     }
-    state$sql_loaded <- c(state$sql_loaded, t)
+    if (isTRUE(state$arrow) && startsWith(t, "refs_") && is.null(state$cache$tables[[t]]) &&
+        .dbi_put_arrow(state, t, slab)) {
+      if (is.null(slab)) state$sql_loaded <- c(state$sql_loaded, t) else transient <- c(transient, t)
+      next
+    }
+    d <- if (is.null(slab)) .dbi_read(state, t) else .dbi_refs_table(state, substring(t, 6L), slab)
+    .dbi_put(state, t, d)
+    if (is.null(slab)) state$sql_loaded <- c(state$sql_loaded, t) else transient <- c(transient, t)
   }
-  state$sql
+  state$last_pushdown <- transient
+  list(con = state$sql, transient = transient)
+}
+
+.dbi_put <- function(state, t, d) {
+  if (identical(state$engine, "duckdb")) {
+    duckdb::duckdb_register(state$sql, t, d)
+  } else {
+    for (f in names(d)) if (inherits(d[[f]], "POSIXct")) d[[f]] <- format(d[[f]], "%Y-%m-%dT%H:%M:%OS3Z", tz = "UTC")
+    DBI::dbWriteTable(state$sql, t, d)
+  }
+}
+
+.dbi_drop <- function(state, t) {
+  if (t %in% state$sql_arrow) {
+    duckdb::duckdb_unregister_arrow(state$sql, t)
+    state$sql_arrow <- setdiff(state$sql_arrow, t)
+  } else if (identical(state$engine, "duckdb")) duckdb::duckdb_unregister(state$sql, t) else DBI::dbRemoveTable(state$sql, t)
+}
+
+# register refs_<array> with DuckDB from Rust-built Arrow batches; FALSE
+# (nothing registered) if the table has native chunks, whose bytes only
+# the R path fills in
+.dbi_put_arrow <- function(state, t, slab) {
+  nm <- substring(t, 6L)
+  st <- .refs_arrow(state$session, paste0("/", nm), slab, .dbi_root(state)$rules)
+  if (attr(st, "info")$native > 0L) { st$release(); return(FALSE) }
+  duckdb::duckdb_register_arrow(state$sql, t, arrow::as_arrow_table(st))
+  state$sql_arrow <- c(state$sql_arrow, t)
+  TRUE
 }
 
 #' @rdname Icechunk
@@ -261,7 +402,9 @@ setMethod("dbListFields", c("IcechunkConnection", "character"), function(conn, n
 #' @export
 setMethod("dbGetQuery", c("IcechunkConnection", "character"), function(conn, statement, ...) {
   state <- .dbi_check(conn)
-  DBI::dbGetQuery(.dbi_sql(state, statement), statement, ...)
+  e <- .dbi_sql(state, statement)
+  on.exit(for (t in e$transient) .dbi_drop(state, t))
+  DBI::dbGetQuery(e$con, statement, ...)
 })
 
 #' @rdname Icechunk
@@ -269,8 +412,11 @@ setMethod("dbGetQuery", c("IcechunkConnection", "character"), function(conn, sta
 setMethod("dbSendQuery", c("IcechunkConnection", "character"), function(conn, statement, ...) {
   state <- .dbi_check(conn)
   rs <- new.env(parent = emptyenv())
-  rs$res <- DBI::dbSendQuery(.dbi_sql(state, statement), statement, ...)
+  e <- .dbi_sql(state, statement)
+  rs$res <- DBI::dbSendQuery(e$con, statement, ...)
   rs$statement <- statement
+  rs$conn_state <- state
+  rs$transient <- e$transient
   new("IcechunkResult", state = rs)
 })
 
@@ -282,7 +428,12 @@ setMethod("dbFetch", "IcechunkResult", function(res, n = -1, ...) DBI::dbFetch(r
 
 #' @rdname Icechunk
 #' @export
-setMethod("dbClearResult", "IcechunkResult", function(res, ...) DBI::dbClearResult(res@state$res, ...))
+setMethod("dbClearResult", "IcechunkResult", function(res, ...) {
+  ok <- DBI::dbClearResult(res@state$res, ...)
+  for (t in res@state$transient) .dbi_drop(res@state$conn_state, t)
+  res@state$transient <- character()
+  invisible(ok)
+})
 
 #' @rdname Icechunk
 #' @export

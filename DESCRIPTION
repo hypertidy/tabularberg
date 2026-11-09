@@ -22,6 +22,8 @@ Suggests:
     testthat (>= 3.0.0),
     RSQLite,
     duckdb,
+    nanoarrow,
+    arrow,
     nanoparquet,
     blob,
     bit64,

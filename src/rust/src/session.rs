@@ -283,91 +283,158 @@ fn ic_rebase_(s: ExternalPtr<RSession>, solver: &str, on_chunk: &str) -> R<()> {
 
 // ---- chunk refs as columns (byterefs layout) -------------------------------
 
-/// One array's chunks as columns: `dims` (list of integer vectors, one per
-/// dimension, 0-based chunk indices), `kind`, `location`, `offset`,
-/// `length`, `etag`, `last_modified`, `key`, and `data` (inline bytes, NULL
-/// otherwise). Built without per-row strings for the coordinates.
-#[extendr]
-fn ic_refs_columns_(s: ExternalPtr<RSession>, array_path: &str) -> R<List> {
-    let mut dims: Vec<Vec<i32>> = Vec::new();
-    let mut a_key: Vec<Rstr> = Vec::new();
-    let empty = Rstr::from("");
-    let mut a_kind: Vec<&'static str> = Vec::new();
-    let mut a_loc: Vec<Rstr> = Vec::new();
-    let mut interned: std::collections::HashMap<String, Rstr> = std::collections::HashMap::new();
-    let mut a_off: Vec<f64> = Vec::new();
-    let mut a_len: Vec<f64> = Vec::new();
-    let mut a_etag: Vec<Option<String>> = Vec::new();
-    let mut a_lm: Vec<f64> = Vec::new();
-    let mut a_data: Vec<Robj> = Vec::new();
-    let p = path(array_path)?;
+/// Parse optional R chunk ranges (NULL, or list of c(lo, hi), hi exclusive)
+/// against an array's chunk grid.
+fn slab_of(ranges: &Robj, nchunks: &[u32]) -> R<Option<Vec<(u32, u32)>>> {
+    if ranges.is_null() {
+        return Ok(None);
+    }
+    let l = ranges.as_list().ok_or_else(|| arg("ranges must be a list of [lo, hi) chunk index pairs"))?;
+    if l.len() != nchunks.len() {
+        return Err(arg(format!("ranges has {} dimensions, array has {}", l.len(), nchunks.len())));
+    }
+    let mut v = Vec::new();
+    for (d, (_, r)) in l.iter().enumerate() {
+        let x = r
+            .as_real_vector()
+            .or_else(|| r.as_integer_vector().map(|i| i.into_iter().map(|q| q as f64).collect()))
+            .ok_or_else(|| arg("each range is c(lo, hi)"))?;
+        let lo = x.first().copied().unwrap_or(0.0).max(0.0) as u32;
+        let hi = (x.get(1).copied().unwrap_or(f64::INFINITY).min(nchunks[d] as f64)) as u32;
+        v.push((lo, hi.max(lo)));
+    }
+    Ok(Some(v))
+}
+
+/// All chunks of an array (session changes included), or only those in a
+/// slab: then each coordinate is resolved with `get_chunk_ref`, which reads
+/// only the manifests whose extents cover it.
+fn collect_chunks(s: &RSession, p: &Path, ranges: &Robj) -> R<Vec<(ChunkIndices, ChunkPayload)>> {
     block_on(async {
         let g = s.session.read().await;
-        let node = g.get_array(&p).await.map_err(ic)?;
-        let mut st = g.all_node_chunks(&node).await.boxed();
-        while let Some(item) = st.next().await {
-            let (_p, info) = item.map_err(ic)?;
-            let c = &info.coord.0;
-            if dims.is_empty() {
-                dims = vec![Vec::new(); c.len()];
-            }
-            for (d, v) in c.iter().enumerate() {
-                dims[d].push(*v as i32);
-            }
-            // keys only where the caller needs to fetch bytes (native/inline)
-            if matches!(info.payload, ChunkPayload::Virtual(_)) {
-                a_key.push(empty.clone());
-            } else {
-                a_key.push(Rstr::from(chunk_key(&p, &info.coord).as_str()));
-            }
-            match info.payload {
-                ChunkPayload::Ref(r) => {
-                    a_kind.push("native");
-                    a_loc.push(Rstr::from(format!("chunks/{}", r.id).as_str()));
-                    a_off.push(r.offset as f64);
-                    a_len.push(r.length as f64);
-                    a_etag.push(None);
-                    a_lm.push(f64::NAN);
-                    a_data.push(().into());
+        let node = g.get_array(p).await.map_err(ic)?;
+        let nchunks: Vec<u32> = match &node.node_data {
+            icechunk::format::snapshot::NodeData::Array { shape, .. } => shape.num_chunks().collect(),
+            _ => Vec::new(),
+        };
+        let mut out = Vec::new();
+        match slab_of(ranges, &nchunks)? {
+            None => {
+                let mut st = g.all_node_chunks(&node).await.boxed();
+                while let Some(item) = st.next().await {
+                    let (_p, info) = item.map_err(ic)?;
+                    out.push((info.coord, info.payload));
                 }
-                ChunkPayload::Virtual(v) => {
-                    let (e, l) = match v.checksum {
-                        Some(Checksum::ETag(e)) => (Some(e.0), f64::NAN),
-                        Some(Checksum::LastModified(t)) => (None, t.0 as f64),
-                        None => (None, f64::NAN),
-                    };
-                    a_kind.push("virtual");
-                    let u = v.location.url();
-                    let r = interned.entry(u.to_string()).or_insert_with(|| Rstr::from(u)).clone();
-                    a_loc.push(r);
-                    a_off.push(v.offset as f64);
-                    a_len.push(v.length as f64);
-                    a_etag.push(e);
-                    a_lm.push(l);
-                    a_data.push(().into());
-                }
-                ChunkPayload::Inline(b) => {
-                    a_kind.push("inline");
-                    a_loc.push(Rstr::from(""));
-                    a_off.push(f64::NAN);
-                    a_len.push(b.len() as f64);
-                    a_etag.push(None);
-                    a_lm.push(f64::NAN);
-                    a_data.push(Raw::from_bytes(&b).into());
-                }
-                _ => {
-                    a_kind.push("unknown");
-                    a_loc.push(Rstr::from(""));
-                    a_off.push(f64::NAN);
-                    a_len.push(f64::NAN);
-                    a_etag.push(None);
-                    a_lm.push(f64::NAN);
-                    a_data.push(().into());
+            }
+            Some(sl) => {
+                let mut idx: Vec<u32> = sl.iter().map(|r| r.0).collect();
+                if sl.iter().all(|r| r.0 < r.1) {
+                    'outer: loop {
+                        let c = ChunkIndices(idx.clone());
+                        if let Some(pl) = g.get_chunk_ref(p, &c).await.map_err(ic)? {
+                            out.push((c, pl));
+                        }
+                        let mut d = idx.len();
+                        loop {
+                            if d == 0 {
+                                break 'outer;
+                            }
+                            d -= 1;
+                            idx[d] += 1;
+                            if idx[d] < sl[d].1 {
+                                break;
+                            }
+                            idx[d] = sl[d].0;
+                        }
+                    }
                 }
             }
         }
-        Ok::<(), Error>(())
-    })?;
+        Ok::<_, Error>((out, nchunks.len()))
+    })
+    .map(|(v, _)| v)
+}
+
+/// One array's chunks as columns: `dims` (list of integer vectors, one per
+/// dimension, 0-based chunk indices), `kind`, `location`, `offset`,
+/// `length`, `etag`, `last_modified`, `key` ("" for virtual chunks), and
+/// `data` (inline bytes, NULL otherwise). `ranges` (NULL, or a list of
+/// c(lo, hi) 0-based chunk index ranges, hi exclusive) restricts to that
+/// slab and reads only the manifests that cover it.
+#[extendr]
+fn ic_refs_columns_(s: ExternalPtr<RSession>, array_path: &str, ranges: Robj) -> R<List> {
+    let p = path(array_path)?;
+    let chunks = collect_chunks(&s, &p, &ranges)?;
+    let n = chunks.len();
+    let mut dims: Vec<Vec<i32>> = Vec::new();
+    let mut a_key: Vec<Rstr> = Vec::with_capacity(n);
+    let empty = Rstr::from("");
+    let mut a_kind: Vec<&'static str> = Vec::with_capacity(n);
+    let mut a_loc: Vec<Rstr> = Vec::with_capacity(n);
+    let mut interned: std::collections::HashMap<String, Rstr> = std::collections::HashMap::new();
+    let mut a_off: Vec<f64> = Vec::with_capacity(n);
+    let mut a_len: Vec<f64> = Vec::with_capacity(n);
+    let mut a_etag: Vec<Option<String>> = Vec::with_capacity(n);
+    let mut a_lm: Vec<f64> = Vec::with_capacity(n);
+    let mut a_data: Vec<Robj> = Vec::with_capacity(n);
+    for (coord, payload) in chunks {
+        if dims.is_empty() {
+            dims = vec![Vec::with_capacity(n); coord.0.len()];
+        }
+        for (d, v) in coord.0.iter().enumerate() {
+            dims[d].push(*v as i32);
+        }
+        if matches!(payload, ChunkPayload::Virtual(_)) {
+            a_key.push(empty.clone());
+        } else {
+            a_key.push(Rstr::from(chunk_key(&p, &coord).as_str()));
+        }
+        match payload {
+            ChunkPayload::Ref(r) => {
+                a_kind.push("native");
+                a_loc.push(Rstr::from(format!("chunks/{}", r.id).as_str()));
+                a_off.push(r.offset as f64);
+                a_len.push(r.length as f64);
+                a_etag.push(None);
+                a_lm.push(f64::NAN);
+                a_data.push(().into());
+            }
+            ChunkPayload::Virtual(v) => {
+                let (e, l) = match v.checksum {
+                    Some(Checksum::ETag(e)) => (Some(e.0), f64::NAN),
+                    Some(Checksum::LastModified(t)) => (None, t.0 as f64),
+                    None => (None, f64::NAN),
+                };
+                let u = v.location.url();
+                let r = interned.entry(u.to_string()).or_insert_with(|| Rstr::from(u)).clone();
+                a_kind.push("virtual");
+                a_loc.push(r);
+                a_off.push(v.offset as f64);
+                a_len.push(v.length as f64);
+                a_etag.push(e);
+                a_lm.push(l);
+                a_data.push(().into());
+            }
+            ChunkPayload::Inline(b) => {
+                a_kind.push("inline");
+                a_loc.push(Rstr::from(""));
+                a_off.push(f64::NAN);
+                a_len.push(b.len() as f64);
+                a_etag.push(None);
+                a_lm.push(f64::NAN);
+                a_data.push(Raw::from_bytes(&b).into());
+            }
+            _ => {
+                a_kind.push("unknown");
+                a_loc.push(Rstr::from(""));
+                a_off.push(f64::NAN);
+                a_len.push(f64::NAN);
+                a_etag.push(None);
+                a_lm.push(f64::NAN);
+                a_data.push(().into());
+            }
+        }
+    }
     let etag: Strings = a_etag.iter().map(|e| match e { Some(v) => Rstr::from(v.as_str()), None => Rstr::na() }).collect();
     let dims_r: Vec<Robj> = dims.into_iter().map(|v| Integers::from_values(v).into()).collect();
     Ok(list!(
@@ -381,6 +448,131 @@ fn ic_refs_columns_(s: ExternalPtr<RSession>, array_path: &str) -> R<List> {
         last_modified = a_lm,
         data = List::from_values(a_data)
     ))
+}
+
+/// The byterefs refs view of one array as an Arrow C stream: columns
+/// dim_0..dim_{n-1} (int32), present (int32), path (dictionary<int32, utf8>:
+/// the location with the remap rules undone), offset and size (int64),
+/// info (utf8), data (binary, inline chunks), in record batches of
+/// `batch_rows`. `rules_prefix` / `rules_replacement` are the remap rules
+/// (a location starting with a replacement gets the prefix back; an
+/// unmatched file:// URL becomes a plain path). Native chunks have null
+/// path and data. Writes the stream into the ArrowArrayStream at
+/// `stream_addr` (from nanoarrow). Returns list(batches, native, rows).
+#[extendr]
+fn ic_refs_arrow_(
+    s: ExternalPtr<RSession>,
+    array_path: &str,
+    ranges: Robj,
+    rules_prefix: Strings,
+    rules_replacement: Strings,
+    batch_rows: i32,
+    stream_addr: &str,
+) -> R<List> {
+    use arrow_array::builder::{BinaryBuilder, Int32Builder, Int64Builder, StringBuilder, StringDictionaryBuilder};
+    use arrow_array::types::Int32Type;
+    use arrow_array::{ArrayRef, RecordBatch, RecordBatchIterator};
+    use arrow_schema::{ArrowError, DataType, Field, Schema};
+    use std::sync::Arc as SArc;
+
+    let p = path(array_path)?;
+    let mut rules: Vec<(String, String)> = rules_replacement
+        .iter()
+        .zip(rules_prefix.iter())
+        .map(|(r, q)| (r.as_str().to_string(), q.as_str().to_string()))
+        .collect();
+    rules.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+    let unresolve = |u: &str| -> String {
+        for (rep, pre) in &rules {
+            if let Some(rest) = u.strip_prefix(rep.as_str()) {
+                return format!("{pre}{rest}");
+            }
+        }
+        match u.strip_prefix("file://") {
+            Some(rest) if rest.starts_with('/') => rest.to_string(),
+            _ => u.to_string(),
+        }
+    };
+    // node dimensionality, also when the slab is empty
+    let ndim = block_on(async {
+        let g = s.session.read().await;
+        let node = g.get_array(&p).await.map_err(ic)?;
+        Ok::<usize, Error>(match &node.node_data {
+            icechunk::format::snapshot::NodeData::Array { shape, .. } => shape.len(),
+            _ => 0,
+        })
+    })?;
+    let chunks = collect_chunks(&s, &p, &ranges)?;
+    let mut fields: Vec<Field> = (0..ndim).map(|d| Field::new(format!("dim_{d}"), DataType::Int32, false)).collect();
+    fields.push(Field::new("present", DataType::Int32, false));
+    fields.push(Field::new("path", DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)), true));
+    fields.push(Field::new("offset", DataType::Int64, true));
+    fields.push(Field::new("size", DataType::Int64, true));
+    fields.push(Field::new("info", DataType::Utf8, true));
+    fields.push(Field::new("data", DataType::Binary, true));
+    let schema = SArc::new(Schema::new(fields));
+    let bs = if batch_rows > 0 { batch_rows as usize } else { 1 << 20 };
+    let mut unres: std::collections::HashMap<String, String> = std::collections::HashMap::new();
+    let mut batches: Vec<std::result::Result<RecordBatch, ArrowError>> = Vec::new();
+    let mut native_rows: i32 = 0;
+    for part in chunks.chunks(bs.max(1)) {
+        let mut dimb: Vec<Int32Builder> = (0..ndim).map(|_| Int32Builder::with_capacity(part.len())).collect();
+        let mut present = Int32Builder::with_capacity(part.len());
+        let mut pathb = StringDictionaryBuilder::<Int32Type>::new();
+        let mut off = Int64Builder::with_capacity(part.len());
+        let mut size = Int64Builder::with_capacity(part.len());
+        let mut info = StringBuilder::new();
+        let mut data = BinaryBuilder::new();
+        for (coord, payload) in part {
+            for d in 0..ndim {
+                dimb[d].append_value(coord.0.get(d).copied().unwrap_or(0) as i32);
+            }
+            present.append_value(1);
+            info.append_null();
+            match payload {
+                ChunkPayload::Virtual(v) => {
+                    let u = v.location.url();
+                    let q = unres.entry(u.to_string()).or_insert_with(|| unresolve(u));
+                    pathb.append_value(q.as_str());
+                    off.append_value(v.offset as i64);
+                    size.append_value(v.length as i64);
+                    data.append_null();
+                }
+                ChunkPayload::Inline(b) => {
+                    pathb.append_null();
+                    off.append_null();
+                    size.append_null();
+                    data.append_value(b.as_ref());
+                }
+                _ => {
+                    native_rows += 1;
+                    pathb.append_null();
+                    off.append_null();
+                    size.append_null();
+                    data.append_null();
+                }
+            }
+        }
+        let mut cols: Vec<ArrayRef> = dimb.into_iter().map(|mut b| SArc::new(b.finish()) as ArrayRef).collect();
+        cols.push(SArc::new(present.finish()));
+        cols.push(SArc::new(pathb.finish()));
+        cols.push(SArc::new(off.finish()));
+        cols.push(SArc::new(size.finish()));
+        cols.push(SArc::new(info.finish()));
+        cols.push(SArc::new(data.finish()));
+        batches.push(RecordBatch::try_new(schema.clone(), cols));
+    }
+    let nb = batches.len() as i32;
+    let reader = RecordBatchIterator::new(batches.into_iter(), schema);
+    let addr: usize = stream_addr.trim().parse().map_err(|_| arg("bad stream address"))?;
+    if addr == 0 {
+        return Err(arg("null stream address"));
+    }
+    let ffi = arrow_array::ffi_stream::FFI_ArrowArrayStream::new(Box::new(reader));
+    // SAFETY: addr is a freshly allocated, empty ArrowArrayStream owned by
+    // the caller (nanoarrow_allocate_array_stream()); we move ours into it.
+    unsafe { std::ptr::write(addr as *mut arrow_array::ffi_stream::FFI_ArrowArrayStream, ffi) };
+    Ok(list!(batches = nb, native = native_rows, rows = chunks.len() as i32))
 }
 
 // ---- chunk reference table ------------------------------------------------
@@ -626,6 +818,7 @@ extendr_module! {
     fn ic_rebase_;
     fn ic_chunk_refs_;
     fn ic_refs_columns_;
+    fn ic_refs_arrow_;
     fn ic_nodes_;
     fn ic_virtual_locations_;
     fn ic_session_bytes_;

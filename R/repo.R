@@ -9,6 +9,14 @@
 #'   prefix = [ic_cred_s3()] etc.
 #' @param spec_version format version for new repositories (1 or 2;
 #'   `NULL` for the library default).
+#' @param manifest_split manifest splitting for new repositories: `NULL`
+#'   (one manifest per array), a named integer vector of chunks per
+#'   manifest along each dimension, by axis index or dimension name (e.g.
+#'   `c(time = 1)` or `c("0" = 30)`; `"*"` for any dimension), applied to
+#'   every array, or a list of rules `list(path = <regex or NULL>, dims = <as
+#'   before>)` tried in order. Split manifests let a read of a slab (see
+#'   [ic_to_byterefs()], the DBI `refs_<array>` tables) fetch only the
+#'   manifests that cover it. Persist with [ic_repo_save_config()].
 #' @return an `icechunk_repo`.
 #' @export
 ic_repo_open <- function(storage, containers = NULL, authorize = NULL) {
@@ -19,10 +27,12 @@ ic_repo_open <- function(storage, containers = NULL, authorize = NULL) {
 
 #' @rdname ic_repo_open
 #' @export
-ic_repo_create <- function(storage, containers = NULL, authorize = NULL, spec_version = NULL) {
+ic_repo_create <- function(storage, containers = NULL, authorize = NULL, spec_version = NULL,
+                           manifest_split = NULL) {
   storage <- .as_storage(storage)
   sv <- if (is.null(spec_version)) 0L else as.integer(spec_version)
-  ptr <- .ic(ic_repo_create_(storage$ptr, .containers_json(containers), .authorize_json(authorize), sv))
+  ptr <- .ic(ic_repo_create_(storage$ptr, .containers_json(containers), .authorize_json(authorize), sv,
+                             .split_json(manifest_split)))
   .repo(ptr, storage)
 }
 
@@ -139,4 +149,18 @@ print.icechunk_diff <- function(x, ...) {
   if (nrow(x$updated_chunks)) cat("  updated chunks:", nrow(x$updated_chunks), "\n")
   if (nrow(x$moved)) cat("  moved nodes:", nrow(x$moved), "\n")
   invisible(x)
+}
+
+.split_json <- function(x) {
+  if (is.null(x) || !length(x)) return("")
+  rule <- function(path, dims) {
+    if (is.null(names(dims)) || any(!nzchar(names(dims)))) stop("manifest_split dims must be named (axis index, dimension name or \"*\")", call. = FALSE)
+    n <- as.integer(dims)
+    if (anyNA(n) || any(n < 1L)) stop("manifest_split sizes must be positive integers", call. = FALSE)
+    list(path = path, dims = unname(Map(function(k, v) list(k, v), names(dims), n)))
+  }
+  rules <- if (is.list(x) && !is.null(x[[1]]$dims)) lapply(x, function(r) rule(r$path, r$dims))
+           else if (is.list(x) && !is.null(x$dims)) list(rule(x$path, x$dims))
+           else list(rule(NULL, x))
+  as.character(jsonlite::toJSON(rules, auto_unbox = TRUE, null = "null"))
 }

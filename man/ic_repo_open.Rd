@@ -14,7 +14,8 @@ ic_repo_create(
   storage,
   containers = NULL,
   authorize = NULL,
-  spec_version = NULL
+  spec_version = NULL,
+  manifest_split = NULL
 )
 
 ic_repo_exists(storage)
@@ -36,6 +37,14 @@ prefix = \code{\link[=ic_cred_s3]{ic_cred_s3()}} etc.}
 
 \item{spec_version}{format version for new repositories (1 or 2;
 \code{NULL} for the library default).}
+
+\item{manifest_split}{manifest splitting for new repositories: \code{NULL}
+(one manifest per array), a named integer vector of chunks per
+manifest along each dimension, by axis index or dimension name (e.g.
+\code{c(time = 1)} or \code{c("0" = 30)}; \code{"*"} for any dimension), applied to
+every array, or a list of rules \verb{list(path = <regex or NULL>, dims = <as before>)} tried in order. Split manifests let a read of a slab (see
+\code{\link[=ic_to_byterefs]{ic_to_byterefs()}}, the DBI \verb{refs_<array>} tables) fetch only the
+manifests that cover it. Persist with \code{\link[=ic_repo_save_config]{ic_repo_save_config()}}.}
 
 \item{repo}{an \code{icechunk_repo}.}
 }

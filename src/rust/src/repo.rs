@@ -41,13 +41,58 @@ pub(crate) fn version(branch: &str, tag: &str, snapshot: &str) -> R<VersionInfo>
 }
 
 fn config_with(containers_json: &str) -> R<Option<RepositoryConfig>> {
+    config_with_split(containers_json, "")
+}
+
+/// Manifest splitting rules from R: a JSON array of
+/// `{"path": <regex or null>, "dims": [[<axis index or dimension name or "*">, <chunks per manifest>], ...]}`.
+/// Rules are tried in order; `path: null` matches any array.
+fn split_config(split_json: &str) -> R<Option<icechunk::config::ManifestSplittingConfig>> {
+    use icechunk::config::{ManifestSplitCondition, ManifestSplitDim, ManifestSplitDimCondition, ManifestSplittingConfig};
+    if split_json.is_empty() {
+        return Ok(None);
+    }
+    let v: serde_json::Value = serde_json::from_str(split_json).map_err(|e| arg(format!("bad split rules: {e}")))?;
+    let rules = v.as_array().ok_or_else(|| arg("split rules must be a list"))?;
+    let mut out = Vec::new();
+    for r in rules {
+        let cond = match r.get("path").and_then(|p| p.as_str()) {
+            Some(re) => ManifestSplitCondition::PathMatches { regex: re.to_string() },
+            None => ManifestSplitCondition::AnyArray,
+        };
+        let mut dims = Vec::new();
+        for d in r.get("dims").and_then(|d| d.as_array()).ok_or_else(|| arg("each split rule needs dims"))? {
+            let pair = d.as_array().filter(|a| a.len() == 2).ok_or_else(|| arg("split dims are [dimension, chunks] pairs"))?;
+            let key = pair[0].as_str().ok_or_else(|| arg("split dimension must be a string"))?;
+            let n = pair[1].as_u64().ok_or_else(|| arg("split size must be a positive integer"))? as u32;
+            let condition = if key == "*" {
+                ManifestSplitDimCondition::Any
+            } else if let Ok(ax) = key.parse::<usize>() {
+                ManifestSplitDimCondition::Axis(ax)
+            } else {
+                ManifestSplitDimCondition::DimensionName(key.to_string())
+            };
+            dims.push(ManifestSplitDim { condition, num_chunks: n });
+        }
+        out.push((cond, dims));
+    }
+    Ok(Some(ManifestSplittingConfig { split_sizes: Some(out) }))
+}
+
+fn config_with_split(containers_json: &str, split_json: &str) -> R<Option<RepositoryConfig>> {
     let conts = containers(containers_json)?;
-    if conts.is_empty() {
+    let split = split_config(split_json)?;
+    if conts.is_empty() && split.is_none() {
         return Ok(None);
     }
     let mut cfg = RepositoryConfig::default();
     for c in conts {
         cfg.set_virtual_chunk_container(c).map_err(arg)?;
+    }
+    if let Some(sp) = split {
+        let mut m = cfg.manifest.clone().unwrap_or_default();
+        m.splitting = Some(sp);
+        cfg.manifest = Some(m);
     }
     Ok(Some(cfg))
 }
@@ -70,8 +115,9 @@ fn ic_repo_create_(
     containers_json: &str,
     authorize_json: &str,
     spec_version: i32,
+    split_json: &str,
 ) -> R<ExternalPtr<RRepo>> {
-    let cfg = config_with(containers_json)?;
+    let cfg = config_with_split(containers_json, split_json)?;
     let auth = authorize_map(authorize_json)?;
     let mut b = Repository::create(Arc::clone(&st.inner)).authorize_virtual_chunk_access(auth);
     if let Some(c) = cfg {
