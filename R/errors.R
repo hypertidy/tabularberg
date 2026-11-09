@@ -22,3 +22,6 @@
   x <- lapply(x, function(col) if (is.character(col)) .na(col) else col)
   structure(x, class = "data.frame", row.names = .set_row_names(length(x[[1L]])))
 }
+
+# base R has %||% only from 4.4.0
+`%||%` <- function(x, y) if (is.null(x)) y else x
