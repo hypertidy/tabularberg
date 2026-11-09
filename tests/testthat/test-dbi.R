@@ -80,3 +80,47 @@ test_that("two writers: the second commit conflicts, rollback recovers", {
   DBI::dbRollback(b)
   expect_identical(DBI::dbReadTable(b, "ancestry")$message[1], "writer a")
 })
+
+test_that("dbCommit(rebase = TRUE): disjoint chunks rebase, same chunk needs a solver", {
+  r <- dbi_repo()
+  a <- DBI::dbConnect(Icechunk(), r$path, authorize = r$auth)
+  b <- DBI::dbConnect(Icechunk(), r$path, authorize = r$auth)
+  on.exit({ DBI::dbDisconnect(a); DBI::dbDisconnect(b) })
+  rows <- DBI::dbGetQuery(a, "SELECT dim_0, dim_1, path, offset, size FROM refs_from_bin ORDER BY dim_0")
+  ref_of <- function(con, i, j) DBI::dbGetQuery(con, sprintf(
+    "SELECT offset FROM refs_from_bin WHERE dim_0 = %d AND dim_1 = %d", i, j))$offset
+
+  # different chunks: detect rebases cleanly, both commits land
+  DBI::dbBegin(a); DBI::dbBegin(b)
+  x <- rows[1, ]; x$offset <- rows$offset[2]
+  y <- rows[3, ]; y$offset <- rows$offset[4]
+  DBI::dbAppendTable(a, "refs_from_bin", x)
+  DBI::dbAppendTable(b, "refs_from_bin", y)
+  DBI::dbCommit(a, message = "a: chunk 0")
+  expect_no_error(DBI::dbCommit(b, message = "b: chunk 2", rebase = TRUE))
+  expect_identical(DBI::dbReadTable(b, "ancestry")$message[1:2], c("b: chunk 2", "a: chunk 0"))
+  expect_equal(ref_of(b, x$dim_0, x$dim_1), rows$offset[2])
+  expect_equal(ref_of(b, y$dim_0, y$dim_1), rows$offset[4])
+
+  # same chunk: detect refuses and leaves the transaction open
+  same <- function() {
+    DBI::dbBegin(a); DBI::dbBegin(b)
+    p <- rows[1, ]; p$offset <- rows$offset[1]
+    q <- rows[1, ]; q$offset <- rows$offset[3]
+    DBI::dbAppendTable(a, "refs_from_bin", p)
+    DBI::dbAppendTable(b, "refs_from_bin", q)
+    DBI::dbCommit(a, message = "a: chunk 0 again")
+  }
+  same()
+  expect_error(DBI::dbCommit(b, message = "b", rebase = TRUE), class = "icechunk_conflict")
+  expect_true(DBI::dbGetInfo(b)$in_transaction)
+  DBI::dbRollback(b)
+
+  # basic solver: ours keeps b's ref, theirs keeps a's
+  same()
+  DBI::dbCommit(b, message = "b ours", rebase = TRUE, solver = "basic", on_chunk = "ours")
+  expect_equal(ref_of(b, rows$dim_0[1], rows$dim_1[1]), rows$offset[3])
+  same()
+  DBI::dbCommit(b, message = "b theirs", rebase = TRUE, solver = "basic", on_chunk = "theirs")
+  expect_equal(ref_of(b, rows$dim_0[1], rows$dim_1[1]), rows$offset[1])
+})

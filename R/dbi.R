@@ -306,11 +306,31 @@ setMethod("dbBegin", "IcechunkConnection", function(conn, ...) {
 #' @rdname Icechunk
 #' @param message commit message.
 #' @param metadata commit metadata (named list).
+#' @param rebase if another writer moved the branch since [DBI::dbBegin()],
+#'   rebase onto the new head and retry, up to `tries` times. With
+#'   `solver = "detect"` this succeeds only when the two change sets touch
+#'   different chunks and metadata; `solver = "basic"` also resolves chunk
+#'   conflicts, keeping `on_chunk` (`"ours"` or `"theirs"`). An unresolvable
+#'   conflict is signalled as `icechunk_conflict` and leaves the transaction
+#'   open (rebased as far as it got), for [DBI::dbRollback()] or another try.
+#' @param solver,on_chunk as for [ic_rebase()].
+#' @param tries maximum commit attempts with `rebase = TRUE`.
 #' @export
-setMethod("dbCommit", "IcechunkConnection", function(conn, message = "DBI commit", metadata = NULL, ...) {
+setMethod("dbCommit", "IcechunkConnection", function(conn, message = "DBI commit", metadata = NULL,
+                                                     rebase = FALSE, solver = c("detect", "basic"),
+                                                     on_chunk = c("ours", "theirs", "fail"), tries = 5L, ...) {
   state <- .dbi_check(conn)
   if (!state$in_tx) stop("no open transaction (dbBegin())", call. = FALSE)
-  snap <- ic_commit(state$session, message, metadata = metadata)
+  solver <- match.arg(solver); on_chunk <- match.arg(on_chunk)
+  n <- if (isTRUE(rebase)) max(1L, as.integer(tries)) else 1L
+  snap <- NULL
+  for (i in seq_len(n)) {
+    snap <- tryCatch(ic_commit(state$session, message, metadata = metadata),
+                     icechunk_conflict = function(e) if (i < n) e else stop(e))
+    if (!inherits(snap, "icechunk_conflict")) break
+    ic_rebase(state$session, solver = solver, on_chunk = on_chunk)
+    state$rebases <- (state$rebases %||% 0L) + 1L
+  }
   state$last_snapshot <- snap
   .dbi_end(state)
   invisible(snap)

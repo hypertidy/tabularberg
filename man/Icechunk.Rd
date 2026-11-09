@@ -75,7 +75,16 @@ Icechunk()
 
 \S4method{dbBegin}{IcechunkConnection}(conn, ...)
 
-\S4method{dbCommit}{IcechunkConnection}(conn, message = "DBI commit", metadata = NULL, ...)
+\S4method{dbCommit}{IcechunkConnection}(
+  conn,
+  message = "DBI commit",
+  metadata = NULL,
+  rebase = FALSE,
+  solver = c("detect", "basic"),
+  on_chunk = c("ours", "theirs", "fail"),
+  tries = 5L,
+  ...
+)
 
 \S4method{dbRollback}{IcechunkConnection}(conn, ...)
 
@@ -131,6 +140,18 @@ the one recorded by \code{\link[=ic_write_byterefs]{ic_write_byterefs()}}, if an
 \item{message}{commit message.}
 
 \item{metadata}{commit metadata (named list).}
+
+\item{rebase}{if another writer moved the branch since \code{\link[DBI:dbBegin]{DBI::dbBegin()}},
+rebase onto the new head and retry, up to \code{tries} times. With
+\code{solver = "detect"} this succeeds only when the two change sets touch
+different chunks and metadata; \code{solver = "basic"} also resolves chunk
+conflicts, keeping \code{on_chunk} (\code{"ours"} or \code{"theirs"}). An unresolvable
+conflict is signalled as \code{icechunk_conflict} and leaves the transaction
+open (rebased as far as it got), for \code{\link[DBI:dbRollback]{DBI::dbRollback()}} or another try.}
+
+\item{solver, on_chunk}{as for \code{\link[=ic_rebase]{ic_rebase()}}.}
+
+\item{tries}{maximum commit attempts with \code{rebase = TRUE}.}
 
 \item{value}{a data frame. For \verb{refs_<array>}: \code{dim_0..}, and either
 \code{path} (+ \code{offset}, \code{size}) for a virtual ref or \code{data} (raw) for an
