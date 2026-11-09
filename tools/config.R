@@ -14,10 +14,12 @@ txt <- gsub("@FEATURES@", feat, txt, fixed = TRUE)
 txt <- gsub("@PROFILE@", if (is_debug) "" else "--release", txt, fixed = TRUE)
 txt <- gsub("@LIBDIR@", if (is_debug) "debug" else "release", txt, fixed = TRUE)
 txt <- gsub("@OFFLINE@", if (!not_cran && vendor) "--offline -j 2" else "", txt, fixed = TRUE)
-# Under R CMD check (which sets _R_CHECK_PACKAGE_NAME_) always remove the
-# Rust target dir after the build, whatever NOT_CRAN says: check otherwise
-# scans the leftover static library and build outputs (r-lib's check action
-# sets NOT_CRAN=true).
-checking <- nzchar(Sys.getenv("_R_CHECK_PACKAGE_NAME_"))
-txt <- gsub("@CLEAN_TARGET@", if (!not_cran || checking) "$(TARGET_DIR)" else "", txt, fixed = TRUE)
+# Keep the Rust target dir (incremental rebuilds) only for a development
+# install: NOT_CRAN set and the package sits in a git checkout. Builds from
+# a tarball (R CMD check, r-universe, CRAN) always clean up, whatever
+# NOT_CRAN says (r-lib's check action sets NOT_CRAN=true, and a leftover
+# target dir makes check scan the static library and build outputs).
+in_checkout <- dir.exists(".git") || dir.exists("../.git")
+keep_target <- not_cran && in_checkout
+txt <- gsub("@CLEAN_TARGET@", if (!keep_target) "$(TARGET_DIR)" else "", txt, fixed = TRUE)
 writeLines(txt, "src/Makevars")
