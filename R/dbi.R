@@ -374,6 +374,10 @@ setMethod("dbRollback", "IcechunkConnection", function(conn, ...) {
 #'   For `arrays`: byterefs `arrays` rows (JSON text columns), creating
 #'   each array.
 #' @param checksums record `etag` / `mtime` checksums on virtual refs.
+#'   Rows without them (columns absent or `NA`) take the checksum of the
+#'   same `path` in the `sources` table, so refs to a known source are
+#'   checked like the rest; a path new to the repository gets none unless
+#'   supplied.
 #' @export
 setMethod("dbAppendTable", "IcechunkConnection", function(conn, name, value, ..., checksums = TRUE, row.names = NULL) {
   state <- .dbi_check(conn)
@@ -392,6 +396,7 @@ setMethod("dbAppendTable", "IcechunkConnection", function(conn, name, value, ...
   if (is.null(value$path)) value$path <- NA_character_
   if (!is.null(value$data)) value$data <- lapply(value$data, function(v) if (is.null(v)) NULL else as.raw(v))
   for (f in intersect(c("offset", "size", "mtime"), names(value))) value[[f]] <- .dbl(value[[f]])
+  if (checksums) value <- .dbi_join_sources(state, value)
   rules <- .dbi_rules(state)
   .dbi_autocommit(state, sprintf("DBI: %d rows into %s", nrow(value), name), function() {
     s <- .br_write_refs(state$session, nm, value, rules, checksums = checksums)
@@ -407,6 +412,24 @@ setMethod("dbWriteTable", c("IcechunkConnection", "character", "data.frame"),
   if (overwrite) stop("overwrite is not supported; Icechunk chunk refs are replaced by appending the same indices", call. = FALSE)
   invisible(dbAppendTable(conn, name, value, ...) >= 0)
 })
+
+# Fill missing etag / mtime from the sources already in the repository, by
+# path, so appended refs to a known source carry its checksum. Supplied
+# values win; paths not yet in the repository are left without one.
+.dbi_join_sources <- function(state, value) {
+  if (!nrow(value) || all(is.na(value$path))) return(value)
+  src <- .dbi_read(state, "sources")
+  if (!nrow(src)) return(value)
+  m <- match(value$path, src$source)
+  if (is.null(value$etag)) value$etag <- NA_character_
+  if (is.null(value$mtime)) value$mtime <- NA_real_
+  value$etag <- as.character(value$etag)
+  fill_e <- is.na(value$etag) & is.na(value$mtime) & !is.na(m)
+  value$etag[fill_e] <- src$etag[m[fill_e]]
+  fill_m <- is.na(value$mtime) & is.na(value$etag) & !is.na(m)
+  value$mtime[fill_m] <- src$mtime[m[fill_m]]
+  value
+}
 
 .dbi_arrays_in <- function(value) {
   need <- c("array", "kind", "storage", "dims", "shape", "chunks", "dtype")

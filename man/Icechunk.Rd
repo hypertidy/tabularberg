@@ -159,7 +159,11 @@ inline chunk; optional \code{present} (0 rows are skipped), \code{etag}, \code{m
 For \code{arrays}: byterefs \code{arrays} rows (JSON text columns), creating
 each array.}
 
-\item{checksums}{record \code{etag} / \code{mtime} checksums on virtual refs.}
+\item{checksums}{record \code{etag} / \code{mtime} checksums on virtual refs.
+Rows without them (columns absent or \code{NA}) take the checksum of the
+same \code{path} in the \code{sources} table, so refs to a known source are
+checked like the rest; a path new to the repository gets none unless
+supplied.}
 
 \item{overwrite, append}{only appending is supported.}
 

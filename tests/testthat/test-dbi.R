@@ -124,3 +124,52 @@ test_that("dbCommit(rebase = TRUE): disjoint chunks rebase, same chunk needs a s
   DBI::dbCommit(b, message = "b theirs", rebase = TRUE, solver = "basic", on_chunk = "theirs")
   expect_equal(ref_of(b, rows$dim_0[1], rows$dim_1[1]), rows$offset[1])
 })
+
+test_that("appended refs inherit the checksum of a known source", {
+  skip_if_no_fixtures(); skip_if_not_installed("RSQLite"); skip_if_not_installed("blob")
+  fx <- manifest()$fixtures$virtual_v2
+  src <- ic_session_readonly(ic_repo_open(fx_path("virtual_v2"), authorize = fx$virtual_prefix))
+  br <- ic_to_byterefs(src)
+  # private copy of the source, recorded with its mtime (so refs carry a checksum)
+  d <- withr::local_tempdir()
+  f <- file.path(d, "grid.bin")
+  file.copy(sub("^file://", "", ic_chunk_refs(src, "/from_bin")$location[1]), f)
+  now <- floor(as.numeric(file.mtime(f)))
+  rf <- br$refs
+  br$sources <- br$sources[0, ]; br$sources[1, ] <- list(1, f, NA, now, NA)
+  br$refs <- function(a) { r <- rf(a); r$path[!is.na(r$path)] <- f; r$mtime <- now; r }
+  rp <- file.path(withr::local_tempdir(), "r")
+  ic_repo_from_byterefs(br, rp)
+  auth <- paste0("file://", d, "/")
+
+  con <- DBI::dbConnect(Icechunk(), rp, authorize = auth)
+  on.exit(DBI::dbDisconnect(con))
+  expect_equal(DBI::dbReadTable(con, "sources")$mtime, now)
+  a <- DBI::dbGetQuery(con, "SELECT * FROM arrays WHERE array = 'from_bin'"); a$array <- "copy"
+  rows <- DBI::dbGetQuery(con, "SELECT dim_0, dim_1, path, offset, size FROM refs_from_bin")
+  expect_false(any(c("etag", "mtime") %in% names(rows)))
+  DBI::dbBegin(con)
+  DBI::dbAppendTable(con, "arrays", a)
+  DBI::dbAppendTable(con, "refs_copy", rows)
+  DBI::dbCommit(con, message = "copy")
+
+  s <- ic_session_readonly(ic_repo_open(rp, authorize = auth), branch = "main")
+  orig <- ic_chunk_refs(s, "/from_bin"); cp <- ic_chunk_refs(s, "/copy")
+  expect_false(anyNA(cp$last_modified))
+  expect_identical(cp$last_modified, orig$last_modified)
+  expect_equal(DBI::dbReadTable(con, "sources")$mtime, now)  # round-trips without drift
+  expect_type(ic_get(s, cp$key[1]), "raw")
+  Sys.setFileTime(f, Sys.time() + 3600)
+  s <- ic_session_readonly(ic_repo_open(rp, authorize = auth), branch = "main")
+  expect_error(ic_get(s, cp$key[1]), "checksum|modified")
+
+  # supplied values win; checksums = FALSE records none
+  DBI::dbAppendTable(con, "refs_copy", transform(rows[1, ], mtime = now + 7200))
+  s <- ic_session_readonly(ic_repo_open(rp, authorize = auth), branch = "main")
+  k <- paste(rows$dim_0[1], rows$dim_1[1], sep = ",")
+  lm <- ic_chunk_refs(s, "/copy"); lm <- lm$last_modified[lm$coord == k]
+  expect_equal(as.numeric(lm), now + 7201)
+  DBI::dbAppendTable(con, "refs_copy", rows[1, ], checksums = FALSE)
+  s <- ic_session_readonly(ic_repo_open(rp, authorize = auth), branch = "main")
+  lm <- ic_chunk_refs(s, "/copy"); expect_true(is.na(lm$last_modified[lm$coord == k]))
+})
