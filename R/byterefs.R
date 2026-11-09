@@ -377,7 +377,9 @@ print.byterefs <- function(x, ...) {
 #'   holds the URL prefixes, suitable for `authorize`.
 #' @export
 ic_byterefs_containers <- function(br, target = NULL, region = Sys.getenv("AWS_REGION", "us-east-1")) {
+  opened <- !inherits(br, "byterefs")
   br <- ic_byterefs_read(br)
+  if (opened && !is.null(br$close)) on.exit(br$close(), add = TRUE)
   target <- .br_target(br, target)
   rules <- .br_rules(br, target)
   paths <- unique(br$sources$source)
@@ -459,68 +461,85 @@ ic_write_byterefs <- function(session, br, target = NULL, checksums = TRUE, vali
     file_mtime_offset = if (checksums) 1L else 0L,
     remap = if (nrow(br$remap)) unname(split(br$remap, seq_len(nrow(br$remap)))) |>
       lapply(as.list) else list())))
-  ic_set(session, "zarr.json", charToRaw(.br_json(list(
-    zarr_format = 3L, node_type = "group", attributes = root), pretty = TRUE)))
+  .br_write_root(session, root)
   out <- list()
   for (i in seq_len(nrow(br$arrays))) {
     a <- br$arrays[i, ]
-    nm <- a$array
-    dims <- a$dims[[1]]; shape <- a$shape[[1]]
-    if (a$storage %in% c("affine", "inline")) {
-      v <- if (a$storage == "affine") {
-        af <- a$affine[[1]]
-        af$start + af$step * (seq_len(shape[1]) - 1)
-      } else NULL
-      b <- if (a$storage == "affine") .br_pack(v, a$dtype) else a$values[[1]]
-      ic_set(session, paste0(nm, "/zarr.json"),
-             .br_array_meta(shape, shape, a$dtype, NA, .br_v3_codecs(NULL, .br_dtype(a$dtype)),
-                            a$attrs[[1]], dims))
-      ic_set(session, paste0(nm, "/c/", paste(rep(0L, length(shape)), collapse = "/")), b)
-      out[[nm]] <- data.frame(array = nm, refs = 0L, native = 1L, absent = 0L)
-      next
-    }
-    if (a$storage != "referenced") stop(nm, ": unknown storage '", a$storage, "'", call. = FALSE)
-    dt <- .br_dtype(a$dtype)
-    ic_set(session, paste0(nm, "/zarr.json"),
-           .br_array_meta(shape, a$chunks[[1]], a$dtype, a$fill,
-                          .br_v3_codecs(a$codec[[1]], dt, nm),
-                          .br_attrs_out(a$attrs[[1]], a$fill), dims))
-    r <- br$refs(nm)
-    present <- r$present == 1L
-    inl <- present & vapply(r$data, function(d) length(d) > 0L, logical(1))
-    virt <- present & !inl & !is.na(r$path)
-    v <- r[virt, , drop = FALSE]
-    # decision 0008: size NULL with offset 0 is the whole object
-    whole <- is.na(v$size)
-    if (any(whole)) {
-      if (any(is.na(v$source_size[whole]))) stop(nm, ": whole-object refs without a source size", call. = FALSE)
-      v$size[whole] <- v$source_size[whole]
-    }
-    refs <- v[, grep("^dim_", names(v)), drop = FALSE]
-    refs$location <- .br_resolve(v$path, rules)
-    refs$offset <- as.double(v$offset)
-    refs$length <- as.double(v$size)
-    if (checksums) {
-      refs$etag <- v$etag
-      # Icechunk checks "unmodified since <seconds>"; for local files
-      # object_store compares against the full sub-second mtime, so a
-      # truncated-seconds mtime always fails. Record the ceiling instead.
-      lm <- as.double(v$mtime)
-      f <- startsWith(refs$location, "file://")
-      lm[f] <- lm[f] + 1
-      refs$last_modified <- lm
-    }
-    nfail <- if (nrow(refs)) ic_set_virtual_refs(session, paste0("/", nm), refs, validate = validate) else 0L
-    if (nfail) stop(nm, ": ", nfail, " refs rejected (location outside declared containers?)", call. = FALSE)
-    for (j in which(inl)) {
-      idx <- vapply(grep("^dim_", names(r), value = TRUE), function(d) r[[d]][j], 0)
-      ic_set(session, paste0(nm, "/c/", paste(as.integer(idx), collapse = "/")), r$data[[j]])
-    }
-    out[[nm]] <- data.frame(array = nm, refs = nrow(refs), native = sum(inl), absent = sum(!present))
+    .br_write_array_meta(session, a)
+    out[[a$array]] <- if (a$storage == "referenced") {
+      .br_write_refs(session, a$array, br$refs(a$array), rules, checksums, validate)
+    } else data.frame(array = a$array, refs = 0L, native = 1L, absent = 0L)
   }
   res <- do.call(rbind, out)
   rownames(res) <- NULL
   res
+}
+
+.br_write_root <- function(session, attrs) {
+  ic_set(session, "zarr.json", charToRaw(.br_json(list(
+    zarr_format = 3L, node_type = "group", attributes = attrs), pretty = TRUE)))
+}
+
+# one parsed arrays row -> zarr.json (and the coordinate chunk for affine/inline)
+.br_write_array_meta <- function(session, a) {
+  nm <- a$array
+  dims <- a$dims[[1]]; shape <- a$shape[[1]]
+  if (a$storage %in% c("affine", "inline")) {
+    b <- if (a$storage == "affine") {
+      af <- a$affine[[1]]
+      .br_pack(af$start + af$step * (seq_len(shape[1]) - 1), a$dtype)
+    } else a$values[[1]]
+    ic_set(session, paste0(nm, "/zarr.json"),
+           .br_array_meta(shape, shape, a$dtype, NA, .br_v3_codecs(NULL, .br_dtype(a$dtype)),
+                          a$attrs[[1]], dims))
+    ic_set(session, paste0(nm, "/c/", paste(rep(0L, length(shape)), collapse = "/")), b)
+    return(invisible(NULL))
+  }
+  if (a$storage != "referenced") stop(nm, ": unknown storage '", a$storage, "'", call. = FALSE)
+  ic_set(session, paste0(nm, "/zarr.json"),
+         .br_array_meta(shape, a$chunks[[1]], a$dtype, a$fill,
+                        .br_v3_codecs(a$codec[[1]], .br_dtype(a$dtype), nm),
+                        .br_attrs_out(a$attrs[[1]], a$fill), dims))
+  invisible(NULL)
+}
+
+# refs rows (dim_*, present, path, offset, size, data, [etag, mtime, source_size])
+# -> virtual refs and native chunks
+.br_write_refs <- function(session, nm, r, rules, checksums = TRUE, validate = TRUE) {
+  if (is.null(r$present)) r$present <- 1L
+  if (is.null(r$data)) r$data <- vector("list", nrow(r))
+  present <- r$present == 1L
+  inl <- present & vapply(r$data, function(d) length(d) > 0L, logical(1))
+  virt <- present & !inl & !is.na(r$path)
+  v <- r[virt, , drop = FALSE]
+  # decision 0008: size NULL with offset 0 is the whole object
+  whole <- is.na(v$size)
+  if (any(whole)) {
+    if (is.null(v$source_size) || any(is.na(v$source_size[whole]))) stop(nm, ": whole-object refs without a source size", call. = FALSE)
+    v$size[whole] <- v$source_size[whole]
+  }
+  refs <- v[, grep("^dim_", names(v)), drop = FALSE]
+  refs$location <- .br_resolve(v$path, rules)
+  refs$offset <- as.double(v$offset)
+  refs$length <- as.double(v$size)
+  if (checksums) {
+    refs$etag <- v$etag %||% rep(NA_character_, nrow(v))
+    # Icechunk checks "unmodified since <seconds>"; for local files
+    # object_store compares against the full sub-second mtime, so a
+    # truncated-seconds mtime always fails. Record the ceiling instead.
+    lm <- as.double(v$mtime %||% rep(NA_real_, nrow(v)))
+    f <- startsWith(refs$location, "file://")
+    lm[f] <- lm[f] + 1
+    refs$last_modified <- lm
+  }
+  nfail <- if (nrow(refs)) ic_set_virtual_refs(session, paste0("/", nm), refs, validate = validate) else 0L
+  if (nfail) stop(nm, ": ", nfail, " refs rejected (location outside declared containers?)", call. = FALSE)
+  dcols <- grep("^dim_", names(r), value = TRUE)
+  for (j in which(inl)) {
+    idx <- vapply(dcols, function(d) r[[d]][j], 0)
+    ic_set(session, paste0(nm, "/c/", paste(as.integer(idx), collapse = "/")), r$data[[j]])
+  }
+  data.frame(array = nm, refs = nrow(refs), native = sum(inl), absent = sum(!present))
 }
 
 #' Create an Icechunk repository from a byterefs store
@@ -562,31 +581,8 @@ ic_repo_from_byterefs <- function(br, storage, target = NULL, message = NULL, au
 
 # ---- Icechunk -> byterefs ---------------------------------------------------------
 
-#' Project an Icechunk session to a byterefs store
-#'
-#' The inverse of [ic_write_byterefs()], and the "chunk references as a
-#' table" view of any Icechunk snapshot. Each array becomes an `arrays` row
-#' (dtype, fill, codec and attributes from its `zarr.json`); virtual chunks
-#' become refs rows with their source path, offset and size; inline and
-#' native chunks become rows with a `data` blob (native chunk bytes are
-#' fetched only if `native = TRUE`). Distinct locations become `sources`,
-#' with `etag` / `mtime` from the chunk checksums.
-#'
-#' What Icechunk does not hold is reconstructed or left empty: source
-#' `size` is `NA`, and `placements` are synthesised so the global refs view
-#' is the identity (one placement per source, covering its chunks). If the
-#' repository was written by [ic_write_byterefs()], the root group's
-#' `byterefs` entry restores the `meta`, the remap rules and the verbatim
-#' source paths.
-#'
-#' @param session an `icechunk_session`.
-#' @param dsn optional path of a SQLite file to write (requires DBI and
-#'   RSQLite); it must not exist.
-#' @param native fetch native chunk bytes into `data` (else those rows have
-#'   `present = 1` and no location; a byterefs reader cannot use them).
-#' @return a `byterefs` object (invisibly if `dsn` is given).
-#' @export
-ic_to_byterefs <- function(session, dsn = NULL, native = TRUE) {
+# root group attributes -> meta, remap rules and the byterefs bookkeeping
+.br_root <- function(session) {
   root <- jsonlite::fromJSON(rawToChar(ic_get(session, "zarr.json")), simplifyVector = FALSE)
   ra <- root$attributes %||% list()
   brx <- ra$byterefs
@@ -599,10 +595,13 @@ ic_to_byterefs <- function(session, dsn = NULL, native = TRUE) {
   target <- brx$target
   rules <- if (!is.null(target) && !is.na(target)) .br_rules(list(remap = remap), target) else remap[0, c("prefix", "replacement")]
 
-  nodes <- ic_nodes(session)
-  nodes <- nodes[nodes$type == "array", , drop = FALSE]
+  list(meta = meta, remap = remap, rules = rules, brx = brx)
+}
+
+# one array -> list(arow = arrays row (list), refs = refs data frame or NULL)
+.br_array <- function(session, p, root, native = TRUE) {
+  rules <- root$rules; brx <- root$brx
   arrs <- list(); refs <- list()
-  for (p in nodes$path) {
     nm <- sub("^/", "", p)
     zj <- jsonlite::fromJSON(rawToChar(ic_get(session, paste0(nm, "/zarr.json"))), simplifyVector = FALSE)
     v2 <- .br_v2_codec(zj$codecs)
@@ -631,7 +630,7 @@ ic_to_byterefs <- function(session, dsn = NULL, native = TRUE) {
                          attrs = .br_json(if (length(attrs)) attrs else structure(list(), names = character())),
                          affine = if (aff) .br_json(list(start = vals[1], step = d[1])) else NA_character_,
                          values = if (aff) list(NULL) else list(b))
-      next
+      return(list(arow = arrs[[nm]], refs = NULL))
     }
     # restore a non-finite _FillValue left out on the way in
     fv <- .br_fill_value(fill)
@@ -644,7 +643,7 @@ ic_to_byterefs <- function(session, dsn = NULL, native = TRUE) {
                        codec = if (is.null(v2$codec)) NA_character_ else .br_json(v2$codec),
                        attrs = .br_json(if (length(attrs)) attrs else structure(list(), names = character())),
                        affine = NA_character_, values = list(NULL))
-    if (!nrow(cr)) next
+    if (!nrow(cr)) return(list(arow = arrs[[nm]], refs = NULL))
     co <- do.call(rbind, lapply(strsplit(cr$coord, ","), as.integer))
     rr <- as.data.frame(co); names(rr) <- paste0("dim_", seq_len(ncol(co)) - 1L)
     rr$present <- 1L
@@ -666,6 +665,44 @@ ic_to_byterefs <- function(session, dsn = NULL, native = TRUE) {
       rr$mtime[f] <- rr$mtime[f] - off
     }
     refs[[nm]] <- rr
+  list(arow = arrs[[nm]], refs = refs[[nm]])
+}
+
+#' Project an Icechunk session to a byterefs store
+#'
+#' The inverse of [ic_write_byterefs()], and the "chunk references as a
+#' table" view of any Icechunk snapshot. Each array becomes an `arrays` row
+#' (dtype, fill, codec and attributes from its `zarr.json`); virtual chunks
+#' become refs rows with their source path, offset and size; inline and
+#' native chunks become rows with a `data` blob (native chunk bytes are
+#' fetched only if `native = TRUE`). Distinct locations become `sources`,
+#' with `etag` / `mtime` from the chunk checksums.
+#'
+#' What Icechunk does not hold is reconstructed or left empty: source
+#' `size` is `NA`, and `placements` are synthesised so the global refs view
+#' is the identity (one placement per source, covering its chunks). If the
+#' repository was written by [ic_write_byterefs()], the root group's
+#' `byterefs` entry restores the `meta`, the remap rules and the verbatim
+#' source paths.
+#'
+#' @param session an `icechunk_session`.
+#' @param dsn optional path of a SQLite file to write (requires DBI and
+#'   RSQLite); it must not exist.
+#' @param native fetch native chunk bytes into `data` (else those rows have
+#'   `present = 1` and no location; a byterefs reader cannot use them).
+#' @return a `byterefs` object (invisibly if `dsn` is given).
+#' @export
+ic_to_byterefs <- function(session, dsn = NULL, native = TRUE) {
+  root <- .br_root(session)
+  meta <- root$meta; remap <- root$remap
+  nodes <- ic_nodes(session)
+  nodes <- nodes[nodes$type == "array", , drop = FALSE]
+  arrs <- list(); refs <- list()
+  for (p in nodes$path) {
+    x <- .br_array(session, p, root, native = native)
+    nm <- x$arow$array
+    arrs[[nm]] <- x$arow
+    if (!is.null(x$refs)) refs[[nm]] <- x$refs
   }
   arrays <- do.call(rbind, lapply(arrs, function(x) {
     v <- x$values; x$values <- NULL
