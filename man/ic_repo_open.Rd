@@ -33,7 +33,12 @@ on the persisted config (use \code{\link[=ic_repo_save_config]{ic_repo_save_conf
 \item{authorize}{virtual chunk prefixes this session may read: \code{NULL}
 (none), a character vector of prefixes (credentials inferred from the
 scheme: s3 from env, http(s) anonymous, file local), or a named list of
-prefix = \code{\link[=ic_cred_s3]{ic_cred_s3()}} etc.}
+prefix = \code{\link[=ic_cred_s3]{ic_cred_s3()}} etc. Icechunk authorises whole virtual chunk
+containers (see \code{\link[=ic_repo_containers]{ic_repo_containers()}}): a prefix that is a container's
+prefix, or broader than one (e.g. \code{"https://"}), authorises every
+declared container it covers, with those credentials; a prefix inside a
+container is an error naming the container; a prefix that covers no
+container is a warning listing the declared ones.}
 
 \item{spec_version}{format version for new repositories (1 or 2;
 \code{NULL} for the library default).}

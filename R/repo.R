@@ -6,7 +6,12 @@
 #' @param authorize virtual chunk prefixes this session may read: `NULL`
 #'   (none), a character vector of prefixes (credentials inferred from the
 #'   scheme: s3 from env, http(s) anonymous, file local), or a named list of
-#'   prefix = [ic_cred_s3()] etc.
+#'   prefix = [ic_cred_s3()] etc. Icechunk authorises whole virtual chunk
+#'   containers (see [ic_repo_containers()]): a prefix that is a container's
+#'   prefix, or broader than one (e.g. `"https://"`), authorises every
+#'   declared container it covers, with those credentials; a prefix inside a
+#'   container is an error naming the container; a prefix that covers no
+#'   container is a warning listing the declared ones.
 #' @param spec_version format version for new repositories (1 or 2;
 #'   `NULL` for the library default).
 #' @param manifest_split manifest splitting for new repositories: `NULL`
@@ -21,8 +26,8 @@
 #' @export
 ic_repo_open <- function(storage, containers = NULL, authorize = NULL) {
   storage <- .as_storage(storage)
-  ptr <- .ic(ic_repo_open_(storage$ptr, .containers_json(containers), .authorize_json(authorize)))
-  .repo(ptr, storage)
+  ptr <- .ic(ic_repo_open_(storage$ptr, .containers_json(containers), ""))
+  .authorize_repo(.repo(ptr, storage), authorize)
 }
 
 #' @rdname ic_repo_open
@@ -31,9 +36,9 @@ ic_repo_create <- function(storage, containers = NULL, authorize = NULL, spec_ve
                            manifest_split = NULL) {
   storage <- .as_storage(storage)
   sv <- if (is.null(spec_version)) 0L else as.integer(spec_version)
-  ptr <- .ic(ic_repo_create_(storage$ptr, .containers_json(containers), .authorize_json(authorize), sv,
+  ptr <- .ic(ic_repo_create_(storage$ptr, .containers_json(containers), "", sv,
                              .split_json(manifest_split)))
-  .repo(ptr, storage)
+  .authorize_repo(.repo(ptr, storage), authorize)
 }
 
 #' @rdname ic_repo_open
@@ -163,4 +168,51 @@ print.icechunk_diff <- function(x, ...) {
            else if (is.list(x) && !is.null(x$dims)) list(rule(x$path, x$dims))
            else list(rule(NULL, x))
   as.character(jsonlite::toJSON(rules, auto_unbox = TRUE, null = "null"))
+}
+
+#' Virtual chunk containers of a repository
+#'
+#' @param repo an `icechunk_repo`.
+#' @return a data frame: `prefix` (URL prefix of each declared container) and
+#'   `authorized` (whether this repository object may read from it).
+#' @export
+ic_repo_containers <- function(repo) {
+  x <- ic_repo_containers_(repo$ptr)
+  data.frame(prefix = as.character(x$declared), authorized = as.character(x$declared) %in% x$authorized,
+             stringsAsFactors = FALSE)
+}
+
+# Expand `authorize` against the declared containers and reopen with exactly
+# those container prefixes.
+.authorize_repo <- function(repo, authorize) {
+  if (is.null(authorize) || !length(authorize)) return(repo)
+  declared <- as.character(ic_repo_containers_(repo$ptr)$declared)
+  auth <- .authorize_expand(authorize, declared)
+  if (!length(auth)) return(repo)
+  .repo(.ic(ic_repo_reauthorize_(repo$ptr, .authorize_json(auth))), repo$storage)
+}
+
+.authorize_expand <- function(authorize, declared) {
+  if (is.character(authorize)) authorize <- stats::setNames(lapply(authorize, .infer_cred), authorize)
+  if (is.null(names(authorize)) || any(!nzchar(names(authorize)))) {
+    stop("authorize must be named by URL prefix", call. = FALSE)
+  }
+  shown <- if (length(declared)) paste0("'", declared, "'", collapse = ", ") else "none"
+  out <- list()
+  # broad prefixes first, so a more specific entry for the same container wins
+  for (p in names(authorize)[order(nchar(names(authorize)))]) {
+    cred <- authorize[[p]]
+    if (p %in% declared) { out[[p]] <- cred; next }
+    kids <- declared[startsWith(declared, p)]
+    if (length(kids)) { for (k in kids) out[k] <- list(cred); next }
+    parent <- declared[startsWith(p, declared)]
+    if (length(parent)) {
+      parent <- parent[which.max(nchar(parent))]
+      stop("Icechunk authorises whole virtual chunk containers: '", p, "' lies inside container '",
+           parent, "'. Authorise '", parent, "' to read from it.", call. = FALSE)
+    }
+    warning("'", p, "' covers no virtual chunk container in this repository (declared: ", shown, ")",
+            call. = FALSE)
+  }
+  out
 }

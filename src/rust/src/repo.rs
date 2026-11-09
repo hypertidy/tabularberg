@@ -131,6 +131,32 @@ fn ic_repo_create_(
     Ok(ExternalPtr::new(RRepo { inner: Arc::new(repo) }))
 }
 
+/// URL prefixes of the virtual chunk containers the repository declares
+/// (persisted config plus any passed at open), and those it authorises.
+#[extendr]
+fn ic_repo_containers_(repo: ExternalPtr<RRepo>) -> List {
+    let mut declared: Vec<String> = repo
+        .inner
+        .config()
+        .virtual_chunk_containers
+        .as_ref()
+        .map(|m| m.keys().cloned().collect())
+        .unwrap_or_default();
+    declared.sort();
+    let mut authorized: Vec<String> = repo.inner.authorized_virtual_container_prefixes().into_iter().collect();
+    authorized.sort();
+    list!(declared = declared, authorized = authorized)
+}
+
+/// The same repository with a new virtual chunk authorisation map (no
+/// re-read of the repository; config unchanged).
+#[extendr]
+fn ic_repo_reauthorize_(repo: ExternalPtr<RRepo>, authorize_json: &str) -> R<ExternalPtr<RRepo>> {
+    let auth = authorize_map(authorize_json)?;
+    let r = block_on(repo.inner.reopen(None, Some(auth))).map_err(ic)?;
+    Ok(ExternalPtr::new(RRepo { inner: Arc::new(r) }))
+}
+
 #[extendr]
 fn ic_repo_exists_(st: ExternalPtr<RStorage>) -> R<bool> {
     block_on(Repository::exists(Arc::clone(&st.inner), None)).map_err(ic)
@@ -299,6 +325,8 @@ extendr_module! {
     fn ic_repo_open_;
     fn ic_repo_create_;
     fn ic_repo_exists_;
+    fn ic_repo_containers_;
+    fn ic_repo_reauthorize_;
     fn ic_repo_spec_version_;
     fn ic_repo_config_json_;
     fn ic_repo_save_config_;

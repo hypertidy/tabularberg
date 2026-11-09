@@ -37,6 +37,14 @@ ic_repo_create_ <- function(st, containers_json, authorize_json, spec_version, s
 
 ic_repo_exists_ <- function(st) .Call(wrap__ic_repo_exists_, st)
 
+#' URL prefixes of the virtual chunk containers the repository declares
+#' (persisted config plus any passed at open), and those it authorises.
+ic_repo_containers_ <- function(repo) .Call(wrap__ic_repo_containers_, repo)
+
+#' The same repository with a new virtual chunk authorisation map (no
+#' re-read of the repository; config unchanged).
+ic_repo_reauthorize_ <- function(repo, authorize_json) .Call(wrap__ic_repo_reauthorize_, repo, authorize_json)
+
 ic_repo_spec_version_ <- function(repo) .Call(wrap__ic_repo_spec_version_, repo)
 
 ic_repo_config_json_ <- function(repo) .Call(wrap__ic_repo_config_json_, repo)
