@@ -275,3 +275,16 @@ ic_compiled_features <- function() ic_compiled_features_()
 #' @rdname ic_compiled_features
 #' @export
 ic_icechunk_version <- function() ic_icechunk_version_()
+
+#' Concurrent manifest fetches
+#'
+#' Reading an array's chunk references ([ic_chunk_refs()],
+#' [ic_to_byterefs()], [ic_refs_arrow()], the DBI `refs_<array>` tables)
+#' needs every manifest that covers it. With split manifests on remote
+#' storage, fetching them one after another dominates; icechunkr first
+#' loads them into the session's cache this many at a time.
+#'
+#' @param n manifests fetched at once (1 = sequential).
+#' @return the previous value (invisibly).
+#' @export
+ic_manifest_concurrency <- function(n = 32L) invisible(ic_set_manifest_concurrency_(as.integer(n)))

@@ -128,6 +128,10 @@ ic_refs_columns_ <- function(s, array_path, ranges) .Call(wrap__ic_refs_columns_
 #' `stream_addr` (from nanoarrow). Returns list(batches, native, rows).
 ic_refs_arrow_ <- function(s, array_path, ranges, rules_prefix, rules_replacement, batch_rows, stream_addr) .Call(wrap__ic_refs_arrow_, s, array_path, ranges, rules_prefix, rules_replacement, batch_rows, stream_addr)
 
+#' Set how many manifests are fetched concurrently (1 = sequential, as
+#' Icechunk's own iterators do). Returns the previous value.
+ic_set_manifest_concurrency_ <- function(n) .Call(wrap__ic_set_manifest_concurrency_, n)
+
 #' Nodes (groups and arrays) with shape and chunk counts.
 ic_nodes_ <- function(s) .Call(wrap__ic_nodes_, s)
 

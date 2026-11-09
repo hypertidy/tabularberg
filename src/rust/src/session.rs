@@ -281,6 +281,67 @@ fn ic_rebase_(s: ExternalPtr<RSession>, solver: &str, on_chunk: &str) -> R<()> {
     })
 }
 
+// ---- concurrent manifest prefetch ------------------------------------------
+
+/// Manifests fetched at once when a read needs several (split manifests).
+static MANIFEST_CONCURRENCY: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(32);
+
+/// Set how many manifests are fetched concurrently (1 = sequential, as
+/// Icechunk's own iterators do). Returns the previous value.
+#[extendr]
+fn ic_set_manifest_concurrency_(n: i32) -> i32 {
+    MANIFEST_CONCURRENCY.swap(n.max(1) as usize, std::sync::atomic::Ordering::Relaxed) as i32
+}
+
+/// Load the manifests of `node` that overlap `slab` (all of them if None)
+/// into the session's manifest cache, `MANIFEST_CONCURRENCY` at a time, by
+/// resolving one coordinate inside each manifest's extents. Icechunk's
+/// chunk iterators then read from the cache instead of fetching manifests
+/// one after another. Returns the number of manifests touched.
+async fn prefetch_manifests(
+    g: &Session,
+    p: &Path,
+    node: &icechunk::format::snapshot::NodeSnapshot,
+    slab: Option<&[(u32, u32)]>,
+) -> R<usize> {
+    let (manifests, ndim) = match &node.node_data {
+        icechunk::format::snapshot::NodeData::Array { manifests, shape, .. } => (manifests.clone(), shape.len()),
+        _ => return Ok(0),
+    };
+    let conc = MANIFEST_CONCURRENCY.load(std::sync::atomic::Ordering::Relaxed);
+    if manifests.len() < 2 || conc < 2 {
+        return Ok(0);
+    }
+    let mut coords: Vec<ChunkIndices> = Vec::new();
+    for m in &manifests {
+        let ext: Vec<std::ops::Range<u32>> = m.extents.iter().cloned().collect();
+        let mut c = Vec::with_capacity(ndim);
+        let mut overlaps = true;
+        for d in 0..ndim {
+            let (elo, ehi) = ext.get(d).map(|r| (r.start, r.end)).unwrap_or((0, u32::MAX));
+            let (slo, shi) = slab.and_then(|s| s.get(d).copied()).unwrap_or((0, u32::MAX));
+            let lo = elo.max(slo);
+            if lo >= ehi.min(shi) {
+                overlaps = false;
+                break;
+            }
+            c.push(lo);
+        }
+        if overlaps {
+            coords.push(ChunkIndices(c));
+        }
+    }
+    let n = coords.len();
+    let results: Vec<_> = futures::stream::iter(coords.into_iter().map(|c| async move { g.get_chunk_ref(p, &c).await }))
+        .buffer_unordered(conc)
+        .collect()
+        .await;
+    for r in results {
+        r.map_err(ic)?;
+    }
+    Ok(n)
+}
+
 // ---- chunk refs as columns (byterefs layout) -------------------------------
 
 /// Parse optional R chunk ranges (NULL, or list of c(lo, hi), hi exclusive)
@@ -318,7 +379,9 @@ fn collect_chunks(s: &RSession, p: &Path, ranges: &Robj) -> R<Vec<(ChunkIndices,
             _ => Vec::new(),
         };
         let mut out = Vec::new();
-        match slab_of(ranges, &nchunks)? {
+        let slab = slab_of(ranges, &nchunks)?;
+        prefetch_manifests(&g, p, &node, slab.as_deref()).await?;
+        match slab {
             None => {
                 let mut st = g.all_node_chunks(&node).await.boxed();
                 while let Some(item) = st.next().await {
@@ -643,13 +706,22 @@ fn ic_chunk_refs_(s: ExternalPtr<RSession>, array_path: &str, include_inline: bo
             a_inline.push(inl);
         };
         if array_path.is_empty() {
+            let nodes: Vec<_> = g.list_nodes(&Path::root()).await.map_err(ic)?.collect::<Vec<_>>();
+            for n in nodes {
+                let n = n.map_err(ic)?;
+                if matches!(n.node_data, icechunk::format::snapshot::NodeData::Array { .. }) {
+                    prefetch_manifests(&g, &n.path, &n, None).await?;
+                }
+            }
             let mut st = g.all_chunks().await.map_err(ic)?.boxed();
             while let Some(item) = st.next().await {
                 let (p, info) = item.map_err(ic)?;
                 push(p, info);
             }
         } else {
-            let node = g.get_array(&path(array_path)?).await.map_err(ic)?;
+            let ap = path(array_path)?;
+            let node = g.get_array(&ap).await.map_err(ic)?;
+            prefetch_manifests(&g, &ap, &node, None).await?;
             let mut st = g.all_node_chunks(&node).await.boxed();
             while let Some(item) = st.next().await {
                 let (p, info) = item.map_err(ic)?;
@@ -819,6 +891,7 @@ extendr_module! {
     fn ic_chunk_refs_;
     fn ic_refs_columns_;
     fn ic_refs_arrow_;
+    fn ic_set_manifest_concurrency_;
     fn ic_nodes_;
     fn ic_virtual_locations_;
     fn ic_session_bytes_;

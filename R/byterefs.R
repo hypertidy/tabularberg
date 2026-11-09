@@ -416,11 +416,25 @@ ic_byterefs_containers <- function(br, target = NULL, region = Sys.getenv("AWS_R
 
 # xarray masks on _FillValue; a non-finite one is left out (it needs no mask
 # and some writers reject it), as py/render_icechunk.py does.
+# Only an existing _FillValue is touched: a finite one is written as the
+# array's fill, a non-finite one is dropped (and recorded, see
+# .br_fill_dropped, so the projection can restore it). None is invented.
 .br_attrs_out <- function(attrs, fill) {
+  if (is.null(attrs$`_FillValue`)) return(attrs)
   attrs$`_FillValue` <- NULL
   f <- .br_fill_value(fill)
   if (!is.null(f) && is.finite(f)) attrs$`_FillValue` <- f
   attrs
+}
+
+# arrays whose non-finite _FillValue .br_attrs_out drops
+.br_fill_dropped <- function(arrays) {
+  keep <- vapply(seq_len(nrow(arrays)), function(i) {
+    a <- arrays[i, ]
+    f <- .br_fill_value(a$fill)
+    a$storage == "referenced" && !is.null(a$attrs[[1]]$`_FillValue`) && !is.null(f) && !is.finite(f)
+  }, logical(1))
+  as.character(arrays$array[keep])
 }
 
 #' Write a byterefs store into an Icechunk session
@@ -459,6 +473,7 @@ ic_write_byterefs <- function(session, br, target = NULL, checksums = TRUE, vali
   root <- c(br$meta, list(byterefs = list(
     target = target %||% NA_character_,
     file_mtime_offset = if (checksums) 1L else 0L,
+    dropped_fill_value = I(.br_fill_dropped(br$arrays)),
     remap = if (nrow(br$remap)) unname(split(br$remap, seq_len(nrow(br$remap)))) |>
       lapply(as.list) else list())))
   .br_write_root(session, root)
@@ -618,11 +633,13 @@ ic_repo_from_byterefs <- function(br, storage, target = NULL, message = NULL, au
     ncr <- length(cr$kind)
     one_chunk <- identical(shape, chunks) && length(shape) == 1L
     coordlike <- one_chunk && ncr == 1L && cr$kind != "virtual" && nm %in% dims
+    # a compressed coordinate chunk is not decoded here: it is kept as a
+    # referenced coordinate array whose one chunk travels as a data blob
+    # with its codec (lossless; written back as a native chunk)
+    if (coordlike && !is.null(v2$codec)) coordlike <- FALSE
+    is_coord <- one_chunk && nm %in% dims
     if (coordlike) {
       b <- if (cr$kind == "inline") cr$data[[1]] else ic_get(session, cr$key)
-      if (!is.null(v2$codec)) {
-        stop(nm, ": compressed coordinate chunks are not decoded yet", call. = FALSE)
-      }
       vals <- .br_unpack(b, dtype, shape[1])
       d <- diff(vals)
       aff <- length(vals) > 1L && all(d == d[1]) &&
@@ -636,12 +653,13 @@ ic_repo_from_byterefs <- function(br, storage, target = NULL, message = NULL, au
                          values = if (aff) list(NULL) else list(b))
       return(list(arow = arrs[[nm]], refs = NULL))
     }
-    # restore a non-finite _FillValue left out on the way in
+    # restore a non-finite _FillValue that ic_write_byterefs left out
     fv <- .br_fill_value(fill)
-    if (is.null(attrs$`_FillValue`) && !is.null(fv) && !is.finite(fv)) {
+    if (is.null(attrs$`_FillValue`) && !is.null(fv) && !is.finite(fv) &&
+        nm %in% unlist(brx$dropped_fill_value)) {
       attrs$`_FillValue` <- if (is.nan(fv)) "NaN" else if (fv > 0) "Infinity" else "-Infinity"
     }
-    arrs[[nm]] <- list(array = nm, kind = "data", storage = "referenced",
+    arrs[[nm]] <- list(array = nm, kind = if (is_coord) "coord" else "data", storage = "referenced",
                        dims = .br_json(I(dims)), shape = .br_json(I(shape)), chunks = .br_json(I(chunks)),
                        dtype = dtype, fill = fill,
                        codec = if (is.null(v2$codec)) NA_character_ else .br_json(v2$codec),
@@ -725,14 +743,21 @@ ic_to_byterefs <- function(session, dsn = NULL, native = TRUE) {
   }
   src <- src[order(src$source), , drop = FALSE]
   sources <- data.frame(source_id = seq_len(nrow(src)), source = src$source,
-                        size = NA_real_, mtime = src$mtime, etag = src$etag, stringsAsFactors = FALSE)
+                        size = rep(NA_real_, nrow(src)), mtime = src$mtime, etag = src$etag, stringsAsFactors = FALSE)
 
   parsed <- .br_arrays_parse(arrays)
   br <- structure(list(format_version = "byterefs/0.1", meta = meta, sources = sources,
                        arrays = parsed, remap = remap,
                        refs = function(array) {
                          r <- refs[[array]]
-                         if (is.null(r)) stop("no refs for ", array, call. = FALSE)
+                         if (is.null(r)) {
+                           a <- parsed[parsed$array == array, ]
+                           if (!nrow(a)) stop("no array ", array, call. = FALSE)
+                           nd <- length(unlist(a$shape[[1]]))
+                           r <- as.data.frame(stats::setNames(rep(list(integer()), nd), paste0("dim_", seq_len(nd) - 1L)))
+                           r$present <- integer(); r$path <- character(); r$offset <- numeric(); r$size <- numeric()
+                           r$info <- character(); r$data <- list(); r$etag <- character(); r$mtime <- numeric()
+                         }
                          m <- match(r$path, sources$source)
                          r$source_size <- sources$size[m]
                          r
@@ -854,14 +879,14 @@ ic_byterefs_compare <- function(x, y, target = NULL) {
     for (f in c("dims", "shape", "chunks")) add(nm, f, same(unlist(a[[f]][[1]]), unlist(b[[f]][[1]])))
     fa <- .br_fill_value(a$fill); fb <- .br_fill_value(b$fill)
     add(nm, "fill", identical(fa, fb) || (is.null(fa) && is.null(fb)) || isTRUE(all.equal(fa, fb)), paste(a$fill, b$fill))
-    if (a$kind == "data") {
+    if (a$storage == "referenced") {
       add(nm, "codec", same(a$codec[[1]], b$codec[[1]]), paste(.br_json(a$codec[[1]]), "|", .br_json(b$codec[[1]])))
     }
     ka <- a$attrs[[1]]; kb <- b$attrs[[1]]
     srt <- function(k) if (length(k)) k[order(names(k))] else list()
     add(nm, "attrs", same(srt(ka), srt(kb)),
         paste(setdiff(union(names(ka), names(kb)), intersect(names(ka), names(kb))), collapse = ","))
-    if (a$kind == "coord") {
+    if (a$kind == "coord" && a$storage != "referenced") {
       va <- .br_coord_values(a); vb <- .br_coord_values(b)
       add(nm, "coord values", identical(va, vb), sprintf("%s vs %s", a$storage, b$storage))
       next

@@ -106,3 +106,46 @@ test_that("dbplyr: tbl() on refs tables, filters pushed down", {
   j <- dplyr::collect(dplyr::inner_join(refs, dplyr::tbl(con, "sources"), by = c(path = "source")))
   expect_equal(nrow(j), nrow(DBI::dbReadTable(con, "refs_from_bin")))
 })
+
+test_that("concurrent manifest prefetch does not change results", {
+  r <- split_repo()
+  get <- function(n) {
+    old <- ic_manifest_concurrency(n); on.exit(ic_manifest_concurrency(old))
+    s <- ic_session_readonly(ic_repo_open(r$path, authorize = r$auth), branch = "main")
+    list(cr = ic_chunk_refs(s, "/from_bin"), all = ic_chunk_refs(s),
+         sl = .br_array(s, "/from_bin", .br_root(s), ranges = list(c(1, 3), c(0, Inf)))$refs)
+  }
+  a <- get(1L); b <- get(32L)
+  o <- function(x) x[order(x$path, x$coord), ]
+  expect_equal(o(a$cr), o(b$cr), ignore_attr = TRUE)
+  expect_equal(o(a$all), o(b$all), ignore_attr = TRUE)
+  expect_equal(a$sl[order(a$sl$dim_0, a$sl$dim_1), 1:6], b$sl[order(b$sl$dim_0, b$sl$dim_1), 1:6], ignore_attr = TRUE)
+  expect_identical(ic_manifest_concurrency(32L), 32L)
+})
+
+test_that("compressed coordinates and chunkless arrays project and round-trip", {
+  skip_if_not_installed("RSQLite"); skip_if_not_installed("blob")
+  d <- withr::local_tempdir()
+  repo <- ic_repo_create(file.path(d, "src"))
+  s <- ic_session_writable(repo, "main")
+  ic_set(s, "zarr.json", charToRaw('{"zarr_format":3,"node_type":"group","attributes":{}}'))
+  zj <- function(shape, codecs) charToRaw(sprintf('{"zarr_format":3,"node_type":"array","shape":[%d],"data_type":"float64",
+    "chunk_grid":{"name":"regular","configuration":{"chunk_shape":[%d]}},"chunk_key_encoding":{"name":"default","configuration":{"separator":"/"}},
+    "fill_value":0.0,"codecs":%s,"attributes":{"units":"m"},"dimension_names":["x"]}', shape, shape, codecs))
+  ic_set(s, "x/zarr.json", zj(4, '[{"name":"bytes","configuration":{"endian":"little"}},{"name":"zstd","configuration":{"level":1,"checksum":false}}]'))
+  ic_set(s, "x/c/0", as.raw(c(0x28, 0xb5, 0x2f, 0xfd, 1:4)))  # opaque compressed bytes, never decoded
+  ic_set(s, "z/zarr.json", zj(1, '[{"name":"bytes","configuration":{"endian":"little"}}]'))  # no chunk
+  ic_commit(s, "src")
+  src <- ic_session_readonly(repo, branch = "main")
+  b <- ic_to_byterefs(src)
+  expect_identical(b$arrays$storage[b$arrays$array == "x"], "referenced")
+  expect_identical(b$arrays$kind[b$arrays$array == "x"], "coord")
+  expect_identical(nrow(b$refs("z")), 0L)
+  r2 <- ic_repo_from_byterefs(b, file.path(d, "dst"))
+  s2 <- ic_session_readonly(r2, branch = "main")
+  expect_identical(ic_get(s2, "x/c/0"), ic_get(src, "x/c/0"))
+  cmp <- ic_byterefs_compare(b, ic_to_byterefs(s2))
+  expect_true(all(cmp$ok), info = paste(cmp$array[!cmp$ok], cmp$check[!cmp$ok]))
+  # no _FillValue invented on the way through
+  expect_null(jsonlite::fromJSON(rawToChar(ic_get(s2, "x/zarr.json")))$attributes$`_FillValue`)
+})
