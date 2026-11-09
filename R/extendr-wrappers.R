@@ -109,6 +109,12 @@ ic_rebase_ <- function(s, solver, on_chunk) .Call(wrap__ic_rebase_, s, solver, o
 #' the inline bytes.
 ic_chunk_refs_ <- function(s, array_path, include_inline) .Call(wrap__ic_chunk_refs_, s, array_path, include_inline)
 
+#' One array's chunks as columns: `dims` (list of integer vectors, one per
+#' dimension, 0-based chunk indices), `kind`, `location`, `offset`,
+#' `length`, `etag`, `last_modified`, `key`, and `data` (inline bytes, NULL
+#' otherwise). Built without per-row strings for the coordinates.
+ic_refs_columns_ <- function(s, array_path) .Call(wrap__ic_refs_columns_, s, array_path)
+
 #' Nodes (groups and arrays) with shape and chunk counts.
 ic_nodes_ <- function(s) .Call(wrap__ic_nodes_, s)
 

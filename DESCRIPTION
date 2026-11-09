@@ -21,6 +21,7 @@ Imports:
 Suggests:
     testthat (>= 3.0.0),
     RSQLite,
+    duckdb,
     nanoparquet,
     blob,
     bit64,

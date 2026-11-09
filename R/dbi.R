@@ -23,7 +23,8 @@ NULL
 #' [ic_to_byterefs()]): `meta`, `arrays`, `sources` and one `refs_<array>`
 #' per data array, plus Icechunk's own `branches`, `tags`, `ancestry` and
 #' `nodes`. SQL ([DBI::dbGetQuery()]) runs on an in-memory SQLite copy of
-#' the tables a statement names (requires RSQLite).
+#' the tables a statement names: an in-memory SQLite copy (RSQLite), or with
+#' `sql = "duckdb"` a DuckDB registration that does not copy.
 #'
 #' Writes go through a writable session on the connection's branch:
 #' [DBI::dbBegin()] opens it, [DBI::dbAppendTable()] on `refs_<array>` sets
@@ -64,11 +65,18 @@ setClass("IcechunkResult", contains = "DBIResult", slots = c(state = "environmen
 #' @param create create the repository if it does not exist.
 #' @param target remap target used to resolve `path` on writes (default:
 #'   the one recorded by [ic_write_byterefs()], if any).
+#' @param sql SQL engine for [DBI::dbGetQuery()]: `"sqlite"` (default)
+#'   copies each table a statement names into an in-memory SQLite;
+#'   `"duckdb"` registers them with an in-memory DuckDB without copying,
+#'   faster on large refs tables. In DuckDB `offset` and `array` are
+#'   reserved words, so quote those columns (`"offset"`, `"array"`); SQL
+#'   written that way runs on both engines.
 #' @param ... unused.
 #' @export
 setMethod("dbConnect", "IcechunkDriver", function(drv, storage, branch = NULL, tag = NULL, snapshot = NULL,
                                                   authorize = NULL, containers = NULL, create = FALSE,
-                                                  target = NULL, ...) {
+                                                  target = NULL, sql = c("sqlite", "duckdb"), ...) {
+  sql <- match.arg(sql)
   if (sum(!is.null(branch), !is.null(tag), !is.null(snapshot)) > 1L) {
     stop("pin the connection to one of branch, tag or snapshot", call. = FALSE)
   }
@@ -80,6 +88,7 @@ setMethod("dbConnect", "IcechunkDriver", function(drv, storage, branch = NULL, t
   state <- new.env(parent = emptyenv())
   state$repo <- repo; state$branch <- branch; state$tag <- tag; state$snapshot <- snapshot
   state$target <- target; state$in_tx <- FALSE; state$valid <- TRUE; state$cache <- list()
+  state$engine <- sql
   state$session <- .dbi_readonly(state)
   new("IcechunkConnection", state = state)
 })
@@ -141,7 +150,9 @@ setMethod("dbConnect", "IcechunkDriver", function(drv, storage, branch = NULL, t
     },
     sources = {
       r <- do.call(rbind, lapply(.dbi_arrays(state), function(x) {
-        if (is.null(x$refs)) NULL else x$refs[!is.na(x$refs$path), c("path", "etag", "mtime")]
+        if (is.null(x$refs)) return(NULL)
+        k <- which(!is.na(x$refs$path) & !duplicated(x$refs$path))
+        data.frame(path = x$refs$path[k], etag = x$refs$etag[k], mtime = x$refs$mtime[k], stringsAsFactors = FALSE)
       }))
       if (is.null(r)) r <- data.frame(path = character(), etag = character(), mtime = numeric())
       u <- r[!duplicated(r$path), , drop = FALSE]
@@ -170,7 +181,7 @@ setMethod("dbConnect", "IcechunkDriver", function(drv, storage, branch = NULL, t
         r$info <- character(); r$data <- list()
       }
       r <- r[, c(paste0("dim_", seq_len(nd) - 1L), "present", "path", "offset", "size", "info", "data")]
-      r$data <- blob_list(r$data)
+      r$data <- blob_list(r$data, check = FALSE)
       r
     })
   rownames(out) <- NULL
@@ -214,20 +225,32 @@ setMethod("dbListFields", c("IcechunkConnection", "character"), function(conn, n
 }
 
 .dbi_sql <- function(state, statement) {
-  .need("RSQLite")
+  duck <- identical(state$engine, "duckdb")
   if (is.null(state$sql) || !DBI::dbIsValid(state$sql)) {
-    state$sql <- DBI::dbConnect(RSQLite::SQLite(), ":memory:")
+    if (duck) {
+      .need("duckdb")
+      # in-memory only: keep DuckDB from creating ~/.duckdb state
+      drv <- if ("shared_home" %in% names(formals(duckdb::duckdb))) duckdb::duckdb(shared_home = FALSE) else duckdb::duckdb()
+      state$sql <- DBI::dbConnect(drv)
+    }
+    else { .need("RSQLite"); state$sql <- DBI::dbConnect(RSQLite::SQLite(), ":memory:") }
     state$sql_loaded <- character()
   }
   key <- state$cache$key %||% (state$cache$key <- paste(ic_session_info(state$session)$snapshot_id, stats::runif(1)))
   if (!identical(state$sql_key, key)) {
-    for (t in DBI::dbListTables(state$sql)) DBI::dbRemoveTable(state$sql, t)
+    for (t in state$sql_loaded) {
+      if (duck) duckdb::duckdb_unregister(state$sql, t) else DBI::dbRemoveTable(state$sql, t)
+    }
     state$sql_loaded <- character(); state$sql_key <- key
   }
   for (t in setdiff(.dbi_sql_tables(state, statement), state$sql_loaded)) {
     d <- .dbi_read(state, t)
-    for (f in names(d)) if (inherits(d[[f]], "POSIXct")) d[[f]] <- format(d[[f]], "%Y-%m-%dT%H:%M:%OS3Z", tz = "UTC")
-    DBI::dbWriteTable(state$sql, t, d)
+    if (duck) {
+      duckdb::duckdb_register(state$sql, t, d)
+    } else {
+      for (f in names(d)) if (inherits(d[[f]], "POSIXct")) d[[f]] <- format(d[[f]], "%Y-%m-%dT%H:%M:%OS3Z", tz = "UTC")
+      DBI::dbWriteTable(state$sql, t, d)
+    }
     state$sql_loaded <- c(state$sql_loaded, t)
   }
   state$sql
@@ -448,7 +471,9 @@ setMethod("dbWriteTable", c("IcechunkConnection", "character", "data.frame"),
 setMethod("dbDisconnect", "IcechunkConnection", function(conn, ...) {
   state <- conn@state
   if (isTRUE(state$in_tx)) warning("discarding an open transaction", call. = FALSE)
-  if (!is.null(state$sql) && DBI::dbIsValid(state$sql)) DBI::dbDisconnect(state$sql)
+  if (!is.null(state$sql) && DBI::dbIsValid(state$sql)) {
+    if (identical(state$engine, "duckdb")) DBI::dbDisconnect(state$sql, shutdown = TRUE) else DBI::dbDisconnect(state$sql)
+  }
   state$valid <- FALSE
   invisible(TRUE)
 })
@@ -467,7 +492,7 @@ setMethod("dbGetInfo", "IcechunkConnection", function(dbObj, ...) {
   s <- dbObj@state
   i <- if (isTRUE(s$valid)) ic_session_info(s$session) else list()
   list(dbname = ic_storage_desc_(s$repo$storage$ptr), branch = s$branch, tag = s$tag,
-       snapshot = i$snapshot_id, in_transaction = isTRUE(s$in_tx),
+       snapshot = i$snapshot_id, in_transaction = isTRUE(s$in_tx), sql = s$engine,
        last_commit = s$last_snapshot, icechunk = ic_icechunk_version())
 })
 

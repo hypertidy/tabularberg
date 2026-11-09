@@ -33,9 +33,9 @@ test_that("transactions: append, commit, rollback, autocommit, time travel", {
   con <- DBI::dbConnect(Icechunk(), r$path, authorize = r$auth)
   on.exit(DBI::dbDisconnect(con))
   snap0 <- DBI::dbGetInfo(con)$snapshot
-  a <- DBI::dbGetQuery(con, "SELECT * FROM arrays WHERE array = 'from_bin'")
+  a <- DBI::dbGetQuery(con, "SELECT * FROM arrays WHERE \"array\" = 'from_bin'")
   a$array <- "copy"
-  rows <- DBI::dbGetQuery(con, "SELECT dim_0, dim_1, path, offset, size FROM refs_from_bin")
+  rows <- DBI::dbGetQuery(con, "SELECT dim_0, dim_1, path, \"offset\", size FROM refs_from_bin")
 
   DBI::dbBegin(con)
   expect_error(DBI::dbBegin(con), "already open")
@@ -70,7 +70,7 @@ test_that("two writers: the second commit conflicts, rollback recovers", {
   a <- DBI::dbConnect(Icechunk(), r$path, authorize = r$auth)
   b <- DBI::dbConnect(Icechunk(), r$path, authorize = r$auth)
   on.exit({ DBI::dbDisconnect(a); DBI::dbDisconnect(b) })
-  rows <- DBI::dbGetQuery(a, "SELECT dim_0, dim_1, path, offset, size FROM refs_from_bin")
+  rows <- DBI::dbGetQuery(a, "SELECT dim_0, dim_1, path, \"offset\", size FROM refs_from_bin")
   DBI::dbBegin(a); DBI::dbBegin(b)
   DBI::dbAppendTable(a, "refs_from_bin", rows[1, ])
   DBI::dbAppendTable(b, "refs_from_bin", rows[2, ])
@@ -86,9 +86,9 @@ test_that("dbCommit(rebase = TRUE): disjoint chunks rebase, same chunk needs a s
   a <- DBI::dbConnect(Icechunk(), r$path, authorize = r$auth)
   b <- DBI::dbConnect(Icechunk(), r$path, authorize = r$auth)
   on.exit({ DBI::dbDisconnect(a); DBI::dbDisconnect(b) })
-  rows <- DBI::dbGetQuery(a, "SELECT dim_0, dim_1, path, offset, size FROM refs_from_bin ORDER BY dim_0")
+  rows <- DBI::dbGetQuery(a, "SELECT dim_0, dim_1, path, \"offset\", size FROM refs_from_bin ORDER BY dim_0")
   ref_of <- function(con, i, j) DBI::dbGetQuery(con, sprintf(
-    "SELECT offset FROM refs_from_bin WHERE dim_0 = %d AND dim_1 = %d", i, j))$offset
+    "SELECT \"offset\" FROM refs_from_bin WHERE dim_0 = %d AND dim_1 = %d", i, j))$offset
 
   # different chunks: detect rebases cleanly, both commits land
   DBI::dbBegin(a); DBI::dbBegin(b)
@@ -145,8 +145,8 @@ test_that("appended refs inherit the checksum of a known source", {
   con <- DBI::dbConnect(Icechunk(), rp, authorize = auth)
   on.exit(DBI::dbDisconnect(con))
   expect_equal(DBI::dbReadTable(con, "sources")$mtime, now)
-  a <- DBI::dbGetQuery(con, "SELECT * FROM arrays WHERE array = 'from_bin'"); a$array <- "copy"
-  rows <- DBI::dbGetQuery(con, "SELECT dim_0, dim_1, path, offset, size FROM refs_from_bin")
+  a <- DBI::dbGetQuery(con, "SELECT * FROM arrays WHERE \"array\" = 'from_bin'"); a$array <- "copy"
+  rows <- DBI::dbGetQuery(con, "SELECT dim_0, dim_1, path, \"offset\", size FROM refs_from_bin")
   expect_false(any(c("etag", "mtime") %in% names(rows)))
   DBI::dbBegin(con)
   DBI::dbAppendTable(con, "arrays", a)
@@ -172,4 +172,22 @@ test_that("appended refs inherit the checksum of a known source", {
   DBI::dbAppendTable(con, "refs_copy", rows[1, ], checksums = FALSE)
   s <- ic_session_readonly(ic_repo_open(rp, authorize = auth), branch = "main")
   lm <- ic_chunk_refs(s, "/copy"); expect_true(is.na(lm$last_modified[lm$coord == k]))
+})
+
+test_that("duckdb and sqlite engines agree", {
+  skip_if_not_installed("duckdb")
+  q <- "SELECT r.dim_0, r.dim_1, r.size, s.source_id FROM refs_from_bin r JOIN sources s ON s.source = r.path ORDER BY r.dim_0, r.dim_1"
+  res <- lapply(c("duckdb", "sqlite"), function(e) {
+    r <- dbi_repo()
+    con <- DBI::dbConnect(Icechunk(), r$path, authorize = r$auth, sql = e)
+    on.exit(DBI::dbDisconnect(con))
+    expect_identical(DBI::dbGetInfo(con)$sql, e)
+    x <- DBI::dbGetQuery(con, q)
+    # a write invalidates what the engine holds
+    DBI::dbAppendTable(con, "refs_from_bin", transform(DBI::dbGetQuery(con, "SELECT dim_0, dim_1, path, \"offset\", size FROM refs_from_bin LIMIT 1"), size = 1))
+    list(x, DBI::dbGetQuery(con, "SELECT min(size) AS m FROM refs_from_bin")$m)
+  })
+  expect_equal(lapply(res[[1]][[1]], as.numeric), lapply(res[[2]][[1]], as.numeric))
+  expect_equal(res[[1]][[2]], 1)
+  expect_equal(res[[2]][[2]], 1)
 })

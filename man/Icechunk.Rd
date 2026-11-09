@@ -46,6 +46,7 @@ Icechunk()
   containers = NULL,
   create = FALSE,
   target = NULL,
+  sql = c("sqlite", "duckdb"),
   ...
 )
 
@@ -123,6 +124,13 @@ default branch \code{"main"}). Only a branch connection can write.}
 \item{target}{remap target used to resolve \code{path} on writes (default:
 the one recorded by \code{\link[=ic_write_byterefs]{ic_write_byterefs()}}, if any).}
 
+\item{sql}{SQL engine for \code{\link[DBI:dbGetQuery]{DBI::dbGetQuery()}}: \code{"sqlite"} (default)
+copies each table a statement names into an in-memory SQLite;
+\code{"duckdb"} registers them with an in-memory DuckDB without copying,
+faster on large refs tables. In DuckDB \code{offset} and \code{array} are
+reserved words, so quote those columns (\code{"offset"}, \code{"array"}); SQL
+written that way runs on both engines.}
+
 \item{...}{unused.}
 
 \item{conn}{an \code{IcechunkConnection}.}
@@ -180,7 +188,8 @@ projection of the snapshot the connection is pinned to (see
 \code{\link[=ic_to_byterefs]{ic_to_byterefs()}}): \code{meta}, \code{arrays}, \code{sources} and one \verb{refs_<array>}
 per data array, plus Icechunk's own \code{branches}, \code{tags}, \code{ancestry} and
 \code{nodes}. SQL (\code{\link[DBI:dbGetQuery]{DBI::dbGetQuery()}}) runs on an in-memory SQLite copy of
-the tables a statement names (requires RSQLite).
+the tables a statement names: an in-memory SQLite copy (RSQLite), or with
+\code{sql = "duckdb"} a DuckDB registration that does not copy.
 }
 \details{
 Writes go through a writable session on the connection's branch:

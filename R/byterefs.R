@@ -611,11 +611,12 @@ ic_repo_from_byterefs <- function(br, storage, target = NULL, message = NULL, au
     dims <- unlist(zj$dimension_names) %||% paste0("dim_", seq_along(shape) - 1L)
     fill <- .br_fill_token(zj$fill_value)
     attrs <- zj$attributes %||% list()
-    cr <- ic_chunk_refs(session, p, inline = TRUE)
+    cr <- .ic(ic_refs_columns_(session$ptr, p))
+    ncr <- length(cr$kind)
     one_chunk <- identical(shape, chunks) && length(shape) == 1L
-    coordlike <- one_chunk && nrow(cr) == 1L && cr$kind != "virtual" && nm %in% dims
+    coordlike <- one_chunk && ncr == 1L && cr$kind != "virtual" && nm %in% dims
     if (coordlike) {
-      b <- if (cr$kind == "inline") cr$inline[[1]] else ic_get(session, cr$key)
+      b <- if (cr$kind == "inline") cr$data[[1]] else ic_get(session, cr$key)
       if (!is.null(v2$codec)) {
         stop(nm, ": compressed coordinate chunks are not decoded yet", call. = FALSE)
       }
@@ -643,27 +644,30 @@ ic_repo_from_byterefs <- function(br, storage, target = NULL, message = NULL, au
                        codec = if (is.null(v2$codec)) NA_character_ else .br_json(v2$codec),
                        attrs = .br_json(if (length(attrs)) attrs else structure(list(), names = character())),
                        affine = NA_character_, values = list(NULL))
-    if (!nrow(cr)) return(list(arow = arrs[[nm]], refs = NULL))
-    co <- do.call(rbind, lapply(strsplit(cr$coord, ","), as.integer))
-    rr <- as.data.frame(co); names(rr) <- paste0("dim_", seq_len(ncol(co)) - 1L)
-    rr$present <- 1L
+    if (!ncr) return(list(arow = arrs[[nm]], refs = NULL))
+    rr <- stats::setNames(cr$dims, paste0("dim_", seq_along(cr$dims) - 1L))
     isv <- cr$kind == "virtual"
-    rr$path <- ifelse(isv, .br_unresolve(cr$location, rules), NA_character_)
+    path <- rep(NA_character_, ncr)
+    ul <- unique(cr$location[isv])
+    path[isv] <- .br_unresolve(ul, rules)[match(cr$location[isv], ul)]
+    rr$present <- rep(1L, ncr)
+    rr$path <- path
     rr$offset <- ifelse(isv, cr$offset, NA_real_)
     rr$size <- ifelse(isv, cr$length, NA_real_)
-    rr$info <- NA_character_
-    rr$data <- lapply(seq_len(nrow(cr)), function(j) {
-      if (cr$kind[j] == "inline") cr$inline[[j]]
-      else if (cr$kind[j] == "native" && native) ic_get(session, cr$key[j])
-      else NULL
-    })
+    rr$info <- rep(NA_character_, ncr)
+    data <- cr$data
+    nat <- which(cr$kind == "native")
+    if (native && length(nat)) data[nat] <- ic_get_many(session, cr$key[nat])
+    rr$data <- data
     rr$etag <- cr$etag
-    rr$mtime <- as.double(cr$last_modified)
+    rr$mtime <- cr$last_modified
+    rr$mtime[is.nan(rr$mtime)] <- NA_real_
     off <- brx$file_mtime_offset %||% 0L
     if (off) {
       f <- isv & startsWith(cr$location, "file://")
       rr$mtime[f] <- rr$mtime[f] - off
     }
+    rr <- structure(rr, class = "data.frame", row.names = .set_row_names(ncr))
     refs[[nm]] <- rr
   list(arow = arrs[[nm]], refs = refs[[nm]])
 }
@@ -809,9 +813,10 @@ ic_to_byterefs <- function(session, dsn = NULL, native = TRUE) {
   invisible(dsn)
 }
 
-blob_list <- function(x) {
-  x <- lapply(x, function(v) if (is.null(v)) NULL else as.raw(v))
-  if (requireNamespace("blob", quietly = TRUE)) blob::as_blob(x) else structure(x, class = c("blob", "vctrs_list_of", "vctrs_vctr", "list"), ptype = raw())
+blob_list <- function(x, check = TRUE) {
+  # check = FALSE: elements are already raw or NULL (built in Rust)
+  if (check) x <- lapply(x, function(v) if (is.null(v)) NULL else as.raw(v))
+  structure(unclass(x), class = c("blob", "vctrs_list_of", "vctrs_vctr", "list"), ptype = raw())
 }
 
 # ---- comparison ---------------------------------------------------------------------

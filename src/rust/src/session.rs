@@ -281,6 +281,108 @@ fn ic_rebase_(s: ExternalPtr<RSession>, solver: &str, on_chunk: &str) -> R<()> {
     })
 }
 
+// ---- chunk refs as columns (byterefs layout) -------------------------------
+
+/// One array's chunks as columns: `dims` (list of integer vectors, one per
+/// dimension, 0-based chunk indices), `kind`, `location`, `offset`,
+/// `length`, `etag`, `last_modified`, `key`, and `data` (inline bytes, NULL
+/// otherwise). Built without per-row strings for the coordinates.
+#[extendr]
+fn ic_refs_columns_(s: ExternalPtr<RSession>, array_path: &str) -> R<List> {
+    let mut dims: Vec<Vec<i32>> = Vec::new();
+    let mut a_key: Vec<Rstr> = Vec::new();
+    let empty = Rstr::from("");
+    let mut a_kind: Vec<&'static str> = Vec::new();
+    let mut a_loc: Vec<Rstr> = Vec::new();
+    let mut interned: std::collections::HashMap<String, Rstr> = std::collections::HashMap::new();
+    let mut a_off: Vec<f64> = Vec::new();
+    let mut a_len: Vec<f64> = Vec::new();
+    let mut a_etag: Vec<Option<String>> = Vec::new();
+    let mut a_lm: Vec<f64> = Vec::new();
+    let mut a_data: Vec<Robj> = Vec::new();
+    let p = path(array_path)?;
+    block_on(async {
+        let g = s.session.read().await;
+        let node = g.get_array(&p).await.map_err(ic)?;
+        let mut st = g.all_node_chunks(&node).await.boxed();
+        while let Some(item) = st.next().await {
+            let (_p, info) = item.map_err(ic)?;
+            let c = &info.coord.0;
+            if dims.is_empty() {
+                dims = vec![Vec::new(); c.len()];
+            }
+            for (d, v) in c.iter().enumerate() {
+                dims[d].push(*v as i32);
+            }
+            // keys only where the caller needs to fetch bytes (native/inline)
+            if matches!(info.payload, ChunkPayload::Virtual(_)) {
+                a_key.push(empty.clone());
+            } else {
+                a_key.push(Rstr::from(chunk_key(&p, &info.coord).as_str()));
+            }
+            match info.payload {
+                ChunkPayload::Ref(r) => {
+                    a_kind.push("native");
+                    a_loc.push(Rstr::from(format!("chunks/{}", r.id).as_str()));
+                    a_off.push(r.offset as f64);
+                    a_len.push(r.length as f64);
+                    a_etag.push(None);
+                    a_lm.push(f64::NAN);
+                    a_data.push(().into());
+                }
+                ChunkPayload::Virtual(v) => {
+                    let (e, l) = match v.checksum {
+                        Some(Checksum::ETag(e)) => (Some(e.0), f64::NAN),
+                        Some(Checksum::LastModified(t)) => (None, t.0 as f64),
+                        None => (None, f64::NAN),
+                    };
+                    a_kind.push("virtual");
+                    let u = v.location.url();
+                    let r = interned.entry(u.to_string()).or_insert_with(|| Rstr::from(u)).clone();
+                    a_loc.push(r);
+                    a_off.push(v.offset as f64);
+                    a_len.push(v.length as f64);
+                    a_etag.push(e);
+                    a_lm.push(l);
+                    a_data.push(().into());
+                }
+                ChunkPayload::Inline(b) => {
+                    a_kind.push("inline");
+                    a_loc.push(Rstr::from(""));
+                    a_off.push(f64::NAN);
+                    a_len.push(b.len() as f64);
+                    a_etag.push(None);
+                    a_lm.push(f64::NAN);
+                    a_data.push(Raw::from_bytes(&b).into());
+                }
+                _ => {
+                    a_kind.push("unknown");
+                    a_loc.push(Rstr::from(""));
+                    a_off.push(f64::NAN);
+                    a_len.push(f64::NAN);
+                    a_etag.push(None);
+                    a_lm.push(f64::NAN);
+                    a_data.push(().into());
+                }
+            }
+        }
+        Ok::<(), Error>(())
+    })?;
+    let etag: Strings = a_etag.iter().map(|e| match e { Some(v) => Rstr::from(v.as_str()), None => Rstr::na() }).collect();
+    let dims_r: Vec<Robj> = dims.into_iter().map(|v| Integers::from_values(v).into()).collect();
+    Ok(list!(
+        dims = List::from_values(dims_r),
+        key = a_key.into_iter().collect::<Strings>(),
+        kind = a_kind,
+        location = a_loc.into_iter().collect::<Strings>(),
+        offset = a_off,
+        length = a_len,
+        etag = etag,
+        last_modified = a_lm,
+        data = List::from_values(a_data)
+    ))
+}
+
 // ---- chunk reference table ------------------------------------------------
 
 fn coord_str(c: &ChunkIndices) -> String {
@@ -523,6 +625,7 @@ extendr_module! {
     fn ic_discard_;
     fn ic_rebase_;
     fn ic_chunk_refs_;
+    fn ic_refs_columns_;
     fn ic_nodes_;
     fn ic_virtual_locations_;
     fn ic_session_bytes_;
