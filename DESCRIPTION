@@ -30,6 +30,8 @@ Suggests:
     arrow,
     nanoparquet,
     openssl,
+    pizzarr,
+    R6,
     blob,
     bit64,
     withr
