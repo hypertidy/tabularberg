@@ -1,0 +1,33 @@
+[package]
+name = "icechunkr"
+version = "0.0.1"
+edition = "2024"
+rust-version = "1.95"
+publish = false
+
+[lib]
+crate-type = ["staticlib", "rlib"]
+name = "icechunkr"
+
+[features]
+default = ["minimal"]
+# Tiers (DESIGN.md section 4). Selected by ICECHUNK_FEATURES at configure.
+minimal = ["icechunk/object-store-fs", "icechunk/object-store-http"]
+cloud = ["minimal", "icechunk/object-store-s3", "icechunk/object-store-gcs", "icechunk/object-store-azure"]
+full = ["cloud", "icechunk/s3", "icechunk/redirect"]
+
+[dependencies]
+extendr-api = "0.8.2"
+icechunk = { version = "=2.3.1", default-features = false }
+tokio = { version = "1", features = ["rt-multi-thread"] }
+bytes = "1"
+futures = "0.3"
+serde_json = "1"
+chrono = "0.4"
+
+[build-dependencies]
+
+[profile.release]
+lto = "thin"
+codegen-units = 16
+strip = "symbols"

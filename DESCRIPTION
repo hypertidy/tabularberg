@@ -1,0 +1,29 @@
+Package: icechunkr
+Title: Icechunk Transactional Array Repositories
+Version: 0.0.0.9000
+Authors@R: person("Michael D.", "Sumner", email = "mdsumner@gmail.com",
+                  role = c("aut", "cre"))
+Description: Bindings to the 'Icechunk' Rust library: storage, repositories,
+    branches, tags, snapshots, sessions, commits, conflict resolution, and
+    virtual chunk references with explicit authorisation of the locations
+    they point to. Sessions can be handed to other native code as bytes.
+    Chunk references of any snapshot can be read as a table.
+License: Apache License (>= 2)
+URL: https://github.com/hypertidy/icechunk-r
+BugReports: https://github.com/hypertidy/icechunk-r/issues
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+SystemRequirements: Cargo (Rust's package manager), rustc >= 1.95
+Imports:
+    jsonlite
+Suggests:
+    testthat (>= 3.0.0),
+    DBI,
+    RSQLite,
+    nanoparquet,
+    blob,
+    bit64,
+    withr
+Config/testthat/edition: 3
+Config/rextendr/version: 0.5.0
+Config/roxygen2/version: 8.1.1
