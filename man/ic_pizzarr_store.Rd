@@ -26,9 +26,10 @@ code path with it (for pizzarr's zarrs backend, use pizzarr's own
 \code{IcechunkStore}, which takes the session as bytes).
 
 Limits come from pizzarr's R decoder, not from Icechunk: Zarr v3 arrays
-whose codecs it does not implement (\code{sharding_indexed}, \verb{numcodecs.*} such
-as \code{numcodecs.zlib} and \code{numcodecs.shuffle}) cannot be read this way;
-\code{\link[=ic_get]{ic_get()}} still returns their raw chunk bytes.
+whose codecs it does not implement cannot be read this way
+(\code{sharding_indexed}; and, in pizzarr 0.2.x as released, the netCDF-4
+\code{numcodecs.shuffle} and \code{numcodecs.zlib}, which the mdsumner/pizzarr fork
+adds). \code{\link[=ic_get]{ic_get()}} still returns their raw chunk bytes.
 }
 \examples{
 \dontrun{

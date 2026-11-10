@@ -16,9 +16,10 @@
 #' `IcechunkStore`, which takes the session as bytes).
 #'
 #' Limits come from pizzarr's R decoder, not from Icechunk: Zarr v3 arrays
-#' whose codecs it does not implement (`sharding_indexed`, `numcodecs.*` such
-#' as `numcodecs.zlib` and `numcodecs.shuffle`) cannot be read this way;
-#' [ic_get()] still returns their raw chunk bytes.
+#' whose codecs it does not implement cannot be read this way
+#' (`sharding_indexed`; and, in pizzarr 0.2.x as released, the netCDF-4
+#' `numcodecs.shuffle` and `numcodecs.zlib`, which the mdsumner/pizzarr fork
+#' adds). [ic_get()] still returns their raw chunk bytes.
 #'
 #' @param session an `icechunk_session` (read-only, or writable to write).
 #' @return an R6 object inheriting `pizzarr::Store`.
