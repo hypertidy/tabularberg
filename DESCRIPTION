@@ -1,8 +1,14 @@
 Package: icechunkr
 Title: Icechunk Transactional Array Repositories
 Version: 0.0.0.9000
-Authors@R: person("Michael D.", "Sumner", email = "mdsumner@gmail.com",
-                  role = c("aut", "cre"))
+Authors@R: c(
+    person("Michael D.", "Sumner", email = "mdsumner@gmail.com",
+           role = c("aut", "cre")),
+    person("Authors of the dependency Rust crates", role = c("ctb", "cph"),
+           comment = "see inst/AUTHORS")
+  )
+Copyright: The Rust crates compiled into the package belong to their
+    authors; see inst/AUTHORS.
 Description: Bindings to the 'Icechunk' Rust library: storage, repositories,
     branches, tags, snapshots, sessions, commits, conflict resolution, and
     virtual chunk references with explicit authorisation of the locations

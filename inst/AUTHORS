@@ -1,0 +1,397 @@
+Authors and licences of the Rust crates compiled into icechunkr
+
+icechunkr links Rust crates (from crates.io) into its shared library. Below
+is every crate the 'full' feature tier can compile (normal and build
+dependencies, all target platforms; the 'minimal' and 'cloud' tiers use a
+subset). Generated from Cargo.lock by tools/authors.R; rerun it when
+dependencies change. Copyright in each crate belongs to its authors as
+named in the crate's metadata or, where none are named, to the
+contributors of the repository given.
+
+385 crates.
+
+ahash 0.8.12 (MIT OR Apache-2.0): Tom Kaitchuck
+aho-corasick 1.1.5 (Unlicense OR MIT): Andrew Gallant
+android_system_properties 0.1.6 (MIT OR Apache-2.0): Nicolas Silva
+arc-swap 1.9.4 (MIT OR Apache-2.0): Michal 'vorner' Vaner
+arrow-array 60.1.0 (Apache-2.0 AND MIT): Apache Arrow
+arrow-buffer 60.1.0 (Apache-2.0): Apache Arrow
+arrow-data 60.1.0 (Apache-2.0): Apache Arrow
+arrow-schema 60.1.0 (Apache-2.0): Apache Arrow
+async-recursion 1.2.0 (MIT OR Apache-2.0): Robert Usher
+async-stream 0.3.6 (MIT): Carl Lerche
+async-stream-impl 0.3.6 (MIT): Carl Lerche
+async-trait 0.1.92 (MIT OR Apache-2.0): David Tolnay
+atomic-waker 1.1.2 (Apache-2.0 OR MIT): Stjepan Glavina; Contributors to futures-rs
+autocfg 1.5.1 (Apache-2.0 OR MIT): Josh Stone
+aws-config 1.13.0 (Apache-2.0): AWS Rust SDK Team; Russell Cohen
+aws-credential-types 1.3.1 (Apache-2.0): AWS Rust SDK Team
+aws-lc-rs 1.19.0 (ISC AND (Apache-2.0 OR ISC)): AWS-LibCrypto
+aws-lc-sys 0.47.0 (ISC AND (Apache-2.0 OR ISC) AND Apache-2.0 AND MIT AND BSD-3-Clause AND (Apache-2.0 OR ISC OR MIT) AND (Apache-2.0 OR ISC OR MIT-0)): AWS-LC
+aws-runtime 1.10.2 (Apache-2.0): AWS Rust SDK Team
+aws-sdk-s3 1.157.0 (Apache-2.0): AWS Rust SDK Team; Russell Cohen
+aws-sdk-sso 1.119.0 (Apache-2.0): AWS Rust SDK Team; Russell Cohen
+aws-sdk-ssooidc 1.121.0 (Apache-2.0): AWS Rust SDK Team; Russell Cohen
+aws-sdk-sts 1.124.0 (Apache-2.0): AWS Rust SDK Team; Russell Cohen
+aws-sigv4 1.6.4 (Apache-2.0): AWS Rust SDK Team; David Barsky
+aws-smithy-async 1.3.1 (Apache-2.0): AWS Rust SDK Team; John DiSanti
+aws-smithy-checksums 0.65.1 (Apache-2.0): AWS Rust SDK Team; Zelda Hessler
+aws-smithy-eventstream 0.61.6 (Apache-2.0): AWS Rust SDK Team; John DiSanti
+aws-smithy-http 0.64.3 (Apache-2.0): AWS Rust SDK Team; Russell Cohen
+aws-smithy-http-client 1.5.2 (Apache-2.0): AWS Rust SDK Team
+aws-smithy-json 0.65.1 (Apache-2.0): AWS Rust SDK Team; John DiSanti
+aws-smithy-observability 0.3.1 (Apache-2.0): AWS Rust SDK Team
+aws-smithy-query 0.64.0 (Apache-2.0): AWS Rust SDK Team; John DiSanti
+aws-smithy-runtime 1.16.2 (Apache-2.0): AWS Rust SDK Team; Zelda Hessler
+aws-smithy-runtime-api 1.20.0 (Apache-2.0): AWS Rust SDK Team; Zelda Hessler
+aws-smithy-runtime-api-macros 1.2.0 (Apache-2.0): AWS Rust SDK Team
+aws-smithy-schema 1.2.0 (Apache-2.0): AWS Rust SDK Team
+aws-smithy-types 1.9.3 (Apache-2.0): AWS Rust SDK Team; Russell Cohen
+aws-smithy-types-convert 0.61.1 (Apache-2.0): AWS Rust SDK Team
+aws-smithy-xml 0.64.1 (Apache-2.0): AWS Rust SDK Team; Russell Cohen
+aws-types 1.7.0 (Apache-2.0): AWS Rust SDK Team; Russell Cohen
+backon 1.6.0 (Apache-2.0): the contributors to https://github.com/Xuanwo/backon
+base16ct 1.0.0 (Apache-2.0 OR MIT): RustCrypto Developers
+base32 0.5.1 (MIT OR Apache-2.0): Andreas Ots; Tim Dumol; Dave Grantham
+base64 0.23.1 (MIT OR Apache-2.0): Marshall Pierce
+base64-simd 0.8.0 (MIT): the contributors to https://github.com/Nugine/simd
+base64ct 1.8.3 (Apache-2.0 OR MIT): RustCrypto Developers
+bitflags 1.3.2 (MIT/Apache-2.0): The Rust Project Developers
+bitflags 2.13.2 (MIT OR Apache-2.0): The Rust Project Developers
+block-buffer 0.10.4 (MIT OR Apache-2.0): RustCrypto Developers
+block-buffer 0.12.1 (MIT OR Apache-2.0): RustCrypto Developers
+bs58 0.5.1 (MIT/Apache-2.0): the contributors to https://github.com/Nullus157/bs58-rs
+bumpalo 3.20.3 (MIT OR Apache-2.0): Nick Fitzgerald
+byteorder 1.5.0 (Unlicense OR MIT): Andrew Gallant
+bytes 1.12.1 (MIT): Carl Lerche; Sean McArthur
+bytes-utils 0.1.4 (Apache-2.0/MIT): Michal 'vorner' Vaner
+cc 1.11.1 (MIT OR Apache-2.0): the contributors to https://github.com/rust-lang/cc-rs
+cfg_aliases 0.2.2 (MIT): Zicklag
+cfg-if 1.0.5 (MIT OR Apache-2.0): Alex Crichton
+chacha20 0.10.2 (MIT OR Apache-2.0): RustCrypto Developers
+chrono 0.4.45 (MIT OR Apache-2.0): the contributors to https://github.com/chronotope/chrono
+cmake 0.1.58 (MIT OR Apache-2.0): Alex Crichton
+cmov 0.5.4 (Apache-2.0 OR MIT): RustCrypto Developers
+combine 4.6.9 (MIT): Markus Westerlind
+const-oid 0.10.2 (Apache-2.0 OR MIT): RustCrypto Developers
+const-random 0.1.18 (MIT OR Apache-2.0): Tom Kaitchuck
+const-random-macro 0.1.16 (MIT OR Apache-2.0): Tom Kaitchuck
+core_detect 1.0.0 (MIT/Apache-2.0): Thom Chiovoloni
+core-foundation 0.10.1 (MIT OR Apache-2.0): The Servo Project Developers
+core-foundation 0.9.4 (MIT OR Apache-2.0): The Servo Project Developers
+core-foundation-sys 0.8.7 (MIT OR Apache-2.0): The Servo Project Developers
+cpubits 0.1.1 (MIT OR Apache-2.0): RustCrypto Developers
+cpufeatures 0.2.17 (MIT OR Apache-2.0): RustCrypto Developers
+cpufeatures 0.3.1 (MIT OR Apache-2.0): RustCrypto Developers
+crc-fast 1.10.0 (MIT OR Apache-2.0): Don MacAskill
+crc32fast 1.5.4 (MIT OR Apache-2.0): Sam Rijs; Alex Crichton
+crunchy 0.2.4 (MIT): Eira Fransham
+crypto-bigint 0.7.11 (Apache-2.0 OR MIT): RustCrypto Developers
+crypto-common 0.1.7 (MIT OR Apache-2.0): RustCrypto Developers
+crypto-common 0.2.2 (MIT OR Apache-2.0): RustCrypto Developers
+ctutils 0.4.8 (Apache-2.0 OR MIT): RustCrypto Developers
+darling 0.24.1 (MIT): Ted Driggs
+darling_core 0.24.1 (MIT): Ted Driggs
+darling_macro 0.24.1 (MIT): Ted Driggs
+der 0.8.3 (Apache-2.0 OR MIT): RustCrypto Developers
+deranged 0.5.9 (MIT OR Apache-2.0): Jacob Pratt
+digest 0.10.7 (MIT OR Apache-2.0): RustCrypto Developers
+digest 0.11.3 (MIT OR Apache-2.0): RustCrypto Developers
+displaydoc 0.2.7 (MIT OR Apache-2.0): Jane Lusby
+dunce 1.0.5 (CC0-1.0 OR MIT-0 OR Apache-2.0): Kornel
+dyn-clone 1.0.20 (MIT OR Apache-2.0): David Tolnay
+ecdsa 0.17.0 (Apache-2.0 OR MIT): RustCrypto Developers
+either 1.19.0 (MIT OR Apache-2.0): the contributors to https://github.com/rayon-rs/either
+elliptic-curve 0.14.3 (Apache-2.0 OR MIT): RustCrypto Developers
+encoding_rs 0.8.44 ((Apache-2.0 OR MIT) AND BSD-3-Clause): Henri Sivonen
+equivalent 1.0.3 (Apache-2.0 OR MIT): the contributors to https://github.com/indexmap-rs/equivalent
+erased-serde 0.4.11 (MIT OR Apache-2.0): David Tolnay
+errno 0.3.14 (MIT OR Apache-2.0): Chris Wong; Dan Gohman
+extendr-api 0.9.0 (MIT): the contributors to https://github.com/extendr/extendr
+extendr-ffi 0.9.0 (MIT): the contributors to https://github.com/extendr/extendr
+extendr-macros 0.9.0 (MIT): the contributors to https://github.com/extendr/extendr
+fastrand 2.5.0 (Apache-2.0 OR MIT): Stjepan Glavina
+ff 0.14.0 (MIT/Apache-2.0): Sean Bowe; Jack Grigg
+find-msvc-tools 0.1.15 (MIT OR Apache-2.0): the contributors to https://github.com/rust-lang/cc-rs
+flatbuffers 25.12.19 (Apache-2.0): Robert Winslow; FlatBuffers Maintainers
+flexbuffers 25.12.19 (Apache-2.0): Casper Neo; FlatBuffers Maintainers
+fnv 1.0.7 (Apache-2.0 / MIT): Alex Crichton
+foldhash 0.2.0 (Zlib): Orson Peters
+form_urlencoded 1.2.2 (MIT OR Apache-2.0): The rust-url developers
+fs_extra 1.3.0 (MIT): Denis Kurilenko
+futures 0.3.34 (MIT OR Apache-2.0): the contributors to https://github.com/rust-lang/futures-rs
+futures-channel 0.3.34 (MIT OR Apache-2.0): the contributors to https://github.com/rust-lang/futures-rs
+futures-core 0.3.34 (MIT OR Apache-2.0): the contributors to https://github.com/rust-lang/futures-rs
+futures-executor 0.3.34 (MIT OR Apache-2.0): the contributors to https://github.com/rust-lang/futures-rs
+futures-io 0.3.34 (MIT OR Apache-2.0): the contributors to https://github.com/rust-lang/futures-rs
+futures-macro 0.3.34 (MIT OR Apache-2.0): the contributors to https://github.com/rust-lang/futures-rs
+futures-sink 0.3.34 (MIT OR Apache-2.0): the contributors to https://github.com/rust-lang/futures-rs
+futures-task 0.3.34 (MIT OR Apache-2.0): the contributors to https://github.com/rust-lang/futures-rs
+futures-util 0.3.34 (MIT OR Apache-2.0): the contributors to https://github.com/rust-lang/futures-rs
+generic-array 0.14.7 (MIT): Bartłomiej Kamiński; Aaron Trent
+getrandom 0.2.17 (MIT OR Apache-2.0): The Rand Project Developers
+getrandom 0.3.4 (MIT OR Apache-2.0): The Rand Project Developers
+getrandom 0.4.3 (MIT OR Apache-2.0): The Rand Project Developers
+gloo-timers 0.3.0 (MIT OR Apache-2.0): Rust and WebAssembly Working Group
+group 0.14.0 (MIT/Apache-2.0): Sean Bowe; Jack Grigg
+h2 0.4.20 (MIT): Carl Lerche; Sean McArthur
+half 2.7.1 (MIT OR Apache-2.0): Kathryn Long
+hashbrown 0.12.3 (MIT OR Apache-2.0): Amanieu d'Antras
+hashbrown 0.17.1 (MIT OR Apache-2.0): the contributors to https://github.com/rust-lang/hashbrown
+hex 0.4.3 (MIT OR Apache-2.0): KokaKiwi
+hmac 0.13.0 (MIT OR Apache-2.0): RustCrypto Developers
+http 1.5.0 (MIT OR Apache-2.0): Alex Crichton; Carl Lerche; Sean McArthur
+http-body 1.1.0 (MIT): Carl Lerche; Lucio Franco; Sean McArthur
+http-body-util 0.1.5 (MIT): Carl Lerche; Lucio Franco; Sean McArthur
+httparse 1.10.1 (MIT OR Apache-2.0): Sean McArthur
+humantime 2.4.0 (MIT OR Apache-2.0): the contributors to https://github.com/chronotope/humantime
+hybrid-array 0.4.15 (MIT OR Apache-2.0): RustCrypto Developers
+hyper 1.12.0 (MIT): Sean McArthur
+hyper-rustls 0.27.10 (Apache-2.0 OR ISC OR MIT): the contributors to https://github.com/rustls/hyper-rustls
+hyper-util 0.1.21 (MIT): Sean McArthur
+iana-time-zone 0.1.65 (MIT OR Apache-2.0): Andrew Straw; René Kijewski; Ryan Lopopolo
+iana-time-zone-haiku 0.1.2 (MIT OR Apache-2.0): René Kijewski
+icechunk 2.3.1 (Apache-2.0): Earthmover PBC
+icechunk-arrow-object-store 2.3.1 (Apache-2.0): Earthmover PBC
+icechunk-format 2.3.1 (Apache-2.0): Earthmover PBC
+icechunk-s3 2.3.1 (Apache-2.0): Earthmover PBC
+icechunk-storage 2.3.1 (Apache-2.0): Earthmover PBC
+icechunk-types 2.3.1 (Apache-2.0): Earthmover PBC
+icu_collections 2.4.0 (Unicode-3.0): The ICU4X Project Developers
+icu_locale_core 2.4.0 (Unicode-3.0): The ICU4X Project Developers
+icu_normalizer 2.4.0 (Unicode-3.0): The ICU4X Project Developers
+icu_normalizer_data 2.4.0 (Unicode-3.0): The ICU4X Project Developers
+icu_properties 2.4.0 (Unicode-3.0): The ICU4X Project Developers
+icu_properties_data 2.4.0 (Unicode-3.0): The ICU4X Project Developers
+icu_provider 2.4.0 (Unicode-3.0): The ICU4X Project Developers
+ident_case 1.0.1 (MIT/Apache-2.0): Ted Driggs
+idna 1.1.0 (MIT OR Apache-2.0): The rust-url developers
+idna_adapter 1.2.2 (Apache-2.0 OR MIT): The rust-url developers
+indexmap 1.9.3 (Apache-2.0 OR MIT): the contributors to https://github.com/bluss/indexmap
+indexmap 2.14.2 (Apache-2.0 OR MIT): the contributors to https://github.com/indexmap-rs/indexmap
+inventory 0.3.25 (MIT OR Apache-2.0): David Tolnay
+ipnet 2.12.2 (MIT OR Apache-2.0): Kris Price
+itertools 0.15.0 (MIT OR Apache-2.0): bluss
+itoa 1.0.19 (MIT OR Apache-2.0): David Tolnay
+jiff 0.2.41 (Unlicense OR MIT): Andrew Gallant
+jiff-core 0.1.4 (Unlicense OR MIT): Andrew Gallant
+jiff-static 0.2.41 (Unlicense OR MIT): Andrew Gallant
+jiff-tzdb 0.1.9 (Unlicense OR MIT): Andrew Gallant
+jiff-tzdb-platform 0.1.3 (Unlicense OR MIT): Andrew Gallant
+jni 0.22.4 (MIT OR Apache-2.0): jni team
+jni-macros 0.22.4 (MIT OR Apache-2.0): the contributors to https://github.com/jni-rs/jni-rs
+jni-sys 0.4.1 (MIT OR Apache-2.0): Steven Fackler; Robert Bragg
+jni-sys-macros 0.4.1 (MIT OR Apache-2.0): Robert Bragg
+jobserver 0.1.35 (MIT OR Apache-2.0): Alex Crichton
+js-sys 0.3.107 (MIT OR Apache-2.0): The wasm-bindgen Developers
+lazy_static 1.5.1 (MIT OR Apache-2.0): Marvin Löbel
+libc 0.2.191 (MIT OR Apache-2.0): the contributors to https://github.com/rust-lang/libc
+libm 0.2.16 (MIT): Alex Crichton; Amanieu d'Antras; Jorge Aparicio; Trevor Gross
+litemap 0.8.3 (Unicode-3.0): The ICU4X Project Developers
+lock_api 0.4.14 (MIT OR Apache-2.0): Amanieu d'Antras
+log 0.4.35 (MIT OR Apache-2.0): The Rust Project Developers
+lru 0.18.5 (MIT): Jerome Froelich
+lru-slab 0.1.3 (MIT OR Apache-2.0 OR Zlib): Benjamin Saunders
+md-5 0.11.0 (MIT OR Apache-2.0): RustCrypto Developers
+memchr 2.8.3 (Unlicense OR MIT): Andrew Gallant; bluss
+mime 0.3.18 (MIT OR Apache-2.0): Sean McArthur
+mio 1.2.4 (MIT): Carl Lerche; Thomas de Zeeuw; Tokio Contributors
+multiversion_no_op 1.0.0 (Apache-2.0 OR MIT): Henri Sivonen
+nix 0.31.3 (MIT): the contributors to https://github.com/nix-rust/nix
+num_enum 0.5.11 (BSD-3-Clause OR MIT OR Apache-2.0): Daniel Wagner-Hall; Daniel Henry-Mantilla; Vincent Esche
+num_enum_derive 0.5.11 (BSD-3-Clause OR MIT OR Apache-2.0): Daniel Wagner-Hall; Daniel Henry-Mantilla; Vincent Esche
+num-bigint 0.5.1 (MIT OR Apache-2.0): the contributors to https://github.com/rust-num/num-bigint
+num-complex 0.4.6 (MIT OR Apache-2.0): The Rust Project Developers
+num-conv 0.2.2 (MIT OR Apache-2.0): Jacob Pratt
+num-integer 0.1.47 (MIT OR Apache-2.0): The Rust Project Developers
+num-traits 0.2.19 (MIT OR Apache-2.0): The Rust Project Developers
+object_store 0.14.2 (MIT/Apache-2.0): the contributors to https://github.com/apache/arrow-rs-object-store
+once_cell 1.21.4 (MIT OR Apache-2.0): Aleksey Kladov
+openssl-probe 0.2.2 (MIT OR Apache-2.0): Alex Crichton
+outref 0.5.2 (MIT): the contributors to https://github.com/Nugine/outref
+p256 0.14.0 (Apache-2.0 OR MIT): RustCrypto Developers
+parking_lot 0.12.5 (MIT OR Apache-2.0): Amanieu d'Antras
+parking_lot_core 0.9.12 (MIT OR Apache-2.0): Amanieu d'Antras
+paste 1.0.15 (MIT OR Apache-2.0): David Tolnay
+pem-rfc7468 1.0.0 (Apache-2.0 OR MIT): RustCrypto Developers
+percent-encoding 2.3.2 (MIT OR Apache-2.0): The rust-url developers
+pin-project-lite 0.2.17 (Apache-2.0 OR MIT): the contributors to https://github.com/taiki-e/pin-project-lite
+pkcs8 0.11.0 (Apache-2.0 OR MIT): RustCrypto Developers
+pkg-config 0.3.34 (MIT OR Apache-2.0): Alex Crichton
+portable-atomic 1.15.0 (Apache-2.0 OR MIT): the contributors to https://github.com/taiki-e/portable-atomic
+portable-atomic-util 0.2.8 (Apache-2.0 OR MIT): the contributors to https://github.com/taiki-e/portable-atomic-util
+potential_utf 0.1.6 (Unicode-3.0): The ICU4X Project Developers
+powerfmt 0.2.1 (MIT OR Apache-2.0): Jacob Pratt
+primefield 0.14.0 (Apache-2.0 OR MIT): RustCrypto Developers
+primeorder 0.14.0 (Apache-2.0 OR MIT): RustCrypto Developers
+proc-macro-crate 1.3.1 (MIT OR Apache-2.0): Bastian Köcher
+proc-macro2 1.0.107 (MIT OR Apache-2.0): David Tolnay; Alex Crichton
+quick_cache 0.7.0 (MIT): Arthur Silva
+quick-xml 0.41.0 (MIT): the contributors to https://github.com/tafia/quick-xml
+quinn 0.11.12 (MIT OR Apache-2.0): the contributors to https://github.com/quinn-rs/quinn
+quinn-proto 0.11.19 (MIT OR Apache-2.0): the contributors to https://github.com/quinn-rs/quinn
+quinn-udp 0.5.16 (MIT OR Apache-2.0): the contributors to https://github.com/quinn-rs/quinn
+quote 1.0.47 (MIT OR Apache-2.0): David Tolnay
+r-efi 5.3.0 (MIT OR Apache-2.0 OR LGPL-2.1-or-later): the contributors to https://github.com/r-efi/r-efi
+r-efi 6.0.0 (MIT OR Apache-2.0 OR LGPL-2.1-or-later): the contributors to https://github.com/r-efi/r-efi
+rand 0.10.3 (MIT OR Apache-2.0): The Rand Project Developers; The Rust Project Developers
+rand_core 0.10.1 (MIT OR Apache-2.0): The Rand Project Developers
+rand_pcg 0.10.2 (MIT OR Apache-2.0): The Rand Project Developers
+readonly 0.2.14 (MIT OR Apache-2.0): David Tolnay
+redox_syscall 0.5.18 (MIT): Jeremy Soller
+ref-cast 1.0.27 (MIT OR Apache-2.0): David Tolnay
+ref-cast-impl 1.0.27 (MIT OR Apache-2.0): David Tolnay
+regex 1.13.1 (MIT OR Apache-2.0): The Rust Project Developers; Andrew Gallant
+regex-automata 0.4.18 (MIT OR Apache-2.0): The Rust Project Developers; Andrew Gallant
+regex-lite 0.1.9 (MIT OR Apache-2.0): The Rust Project Developers; Andrew Gallant
+regex-syntax 0.8.11 (MIT OR Apache-2.0): The Rust Project Developers; Andrew Gallant
+reqwest 0.13.5 (MIT OR Apache-2.0): Sean McArthur
+rfc6979 0.6.0 (Apache-2.0 OR MIT): RustCrypto Developers
+ring 0.17.14 (Apache-2.0 AND ISC): the contributors to https://github.com/briansmith/ring
+rlimit 0.11.0 (MIT): Nugine
+rmp 0.8.15 (MIT): Evgeny Safronov; Kornel
+rmp-serde 1.3.1 (MIT): Evgeny Safronov
+rustc_version 0.4.1 (MIT OR Apache-2.0): the contributors to https://github.com/djc/rustc-version-rs
+rustc-hash 2.1.3 (Apache-2.0 OR MIT): The Rust Project Developers
+rustls 0.23.46 (Apache-2.0 OR ISC OR MIT): the contributors to https://github.com/rustls/rustls
+rustls-native-certs 0.8.5 (Apache-2.0 OR ISC OR MIT): the contributors to https://github.com/rustls/rustls-native-certs
+rustls-pki-types 1.15.1 (MIT OR Apache-2.0): the contributors to https://github.com/rustls/pki-types
+rustls-platform-verifier 0.7.1 (MIT OR Apache-2.0): the contributors to https://github.com/rustls/rustls-platform-verifier
+rustls-platform-verifier-android 0.2.0 (MIT OR Apache-2.0): the contributors to https://github.com/rustls/rustls-platform-verifier
+rustls-webpki 0.103.16 (ISC): the contributors to https://github.com/rustls/webpki
+rustversion 1.0.23 (MIT OR Apache-2.0): David Tolnay
+ryu 1.0.23 (Apache-2.0 OR BSL-1.0): David Tolnay
+same-file 1.0.6 (Unlicense/MIT): Andrew Gallant
+schannel 0.1.30 (MIT): Steven Fackler; Steffen Butzer
+schemars 0.9.0 (MIT): Graham Esau
+schemars 1.2.3 (MIT): Graham Esau
+scopeguard 1.2.0 (MIT OR Apache-2.0): bluss
+sec1 0.8.1 (Apache-2.0 OR MIT): RustCrypto Developers
+security-framework 3.7.0 (MIT OR Apache-2.0): Steven Fackler; Kornel
+security-framework-sys 2.17.0 (MIT OR Apache-2.0): Steven Fackler; Kornel
+semver 1.0.28 (MIT OR Apache-2.0): David Tolnay
+serde 1.0.229 (MIT OR Apache-2.0): Erick Tryzelaar; David Tolnay
+serde_bytes 0.11.19 (MIT OR Apache-2.0): David Tolnay
+serde_core 1.0.229 (MIT OR Apache-2.0): Erick Tryzelaar; David Tolnay
+serde_derive 1.0.229 (MIT OR Apache-2.0): Erick Tryzelaar; David Tolnay
+serde_json 1.0.154 (MIT OR Apache-2.0): the contributors to https://github.com/serde-rs/json
+serde_urlencoded 0.7.1 (MIT/Apache-2.0): Anthony Ramine
+serde_with 3.24.0 (MIT OR Apache-2.0): Jonas Bushart; Marcin Kaźmierczak
+serde_with_macros 3.24.0 (MIT OR Apache-2.0): Jonas Bushart
+serde_yaml_ng 0.10.0 (MIT): Antoine Catton
+serdect 0.4.3 (Apache-2.0 OR MIT): RustCrypto Developers
+sha1 0.10.7 (MIT OR Apache-2.0): RustCrypto Developers
+sha1 0.11.0 (MIT OR Apache-2.0): RustCrypto Developers
+sha2 0.11.1 (MIT OR Apache-2.0): RustCrypto Developers
+sharded-slab 0.1.7 (MIT): Eliza Weisman
+shlex 2.0.1 (MIT OR Apache-2.0): comex; Fenhl; Adrian Taylor; Alex Touchet; Daniel Parks; Garrett Berg
+signal-hook-registry 1.4.8 (MIT OR Apache-2.0): Michal 'vorner' Vaner; Masaki Hara
+signature 3.0.0 (Apache-2.0 OR MIT): RustCrypto Developers
+simd_cesu8 1.2.0 (Apache-2.0 OR MIT): Sean C. Roach
+simdutf8 0.1.5 (MIT OR Apache-2.0): Hans Kratz
+slab 0.4.12 (MIT): Carl Lerche
+smallvec 1.16.5 (MIT OR Apache-2.0): The Servo Project Developers
+socket2 0.6.5 (MIT OR Apache-2.0): Alex Crichton; Thomas de Zeeuw
+spin 0.10.1 (MIT): Mathijs van de Nes; John Ericson; Joshua Barretto
+spki 0.8.1 (Apache-2.0 OR MIT): RustCrypto Developers
+stable_deref_trait 1.2.1 (MIT OR Apache-2.0): Robert Grosse
+strsim 0.11.1 (MIT): Danny Guo; maxbachmann
+subtle 2.6.1 (BSD-3-Clause): Isis Lovecruft; Henry de Valence
+syn 1.0.109 (MIT OR Apache-2.0): David Tolnay
+syn 2.0.119 (MIT OR Apache-2.0): David Tolnay
+syn 3.0.10 (MIT OR Apache-2.0): David Tolnay
+sync_wrapper 1.0.2 (Apache-2.0): Actyx AG
+synstructure 0.14.0 (MIT): Nika Layzell
+system-configuration 0.7.0 (MIT OR Apache-2.0): Mullvad VPN
+system-configuration-sys 0.6.0 (MIT OR Apache-2.0): Mullvad VPN
+thiserror 2.0.21 (MIT OR Apache-2.0): David Tolnay
+thiserror-impl 2.0.21 (MIT OR Apache-2.0): David Tolnay
+thread_local 1.1.10 (MIT OR Apache-2.0): Amanieu d'Antras
+time 0.3.55 (MIT OR Apache-2.0): Jacob Pratt; Time contributors
+time-core 0.1.9 (MIT OR Apache-2.0): Jacob Pratt; Time contributors
+time-macros 0.2.32 (MIT OR Apache-2.0): Jacob Pratt; Time contributors
+tiny-keccak 2.0.2 (CC0-1.0): debris
+tinystr 0.8.5 (Unicode-3.0): The ICU4X Project Developers
+tinyvec 1.13.3 (Zlib OR Apache-2.0 OR MIT): Lokathor
+tokio 1.54.1 (MIT): Tokio Contributors
+tokio-macros 2.7.2 (MIT): Tokio Contributors
+tokio-rustls 0.26.6 (MIT OR Apache-2.0): the contributors to https://github.com/rustls/tokio-rustls
+tokio-util 0.7.20 (MIT): Tokio Contributors
+toml_datetime 0.6.11 (MIT OR Apache-2.0): the contributors to https://github.com/toml-rs/toml
+toml_edit 0.19.15 (MIT OR Apache-2.0): Andronik Ordian; Ed Page
+tower 0.5.3 (MIT): Tower Maintainers
+tower-http 0.6.11 (MIT): Tower Maintainers
+tower-layer 0.3.3 (MIT): Tower Maintainers
+tower-service 0.3.3 (MIT): Tower Maintainers
+tracing 0.1.44 (MIT): Eliza Weisman; Tokio Contributors
+tracing-attributes 0.1.31 (MIT): Tokio Contributors; Eliza Weisman; David Barsky
+tracing-core 0.1.36 (MIT): Tokio Contributors
+tracing-error 0.2.1 (MIT): Eliza Weisman; Jane Lusby; Tokio Contributors
+tracing-subscriber 0.3.23 (MIT): Eliza Weisman; David Barsky; Tokio Contributors
+try-lock 0.2.5 (MIT): Sean McArthur
+typed-path 0.12.4 (MIT OR Apache-2.0): Chip Senkbeil
+typeid 1.0.3 (MIT OR Apache-2.0): David Tolnay
+typenum 1.20.1 (MIT OR Apache-2.0): the contributors to https://github.com/paholg/typenum
+typetag 0.2.23 (MIT OR Apache-2.0): David Tolnay
+typetag-impl 0.2.23 (MIT OR Apache-2.0): David Tolnay
+unicode-ident 1.0.27 ((MIT OR Apache-2.0) AND Unicode-3.0): David Tolnay
+unsafe-libyaml 0.2.11 (MIT): David Tolnay
+untrusted 0.9.0 (ISC): Brian Smith
+url 2.5.8 (MIT OR Apache-2.0): The rust-url developers
+urlencoding 2.1.3 (MIT): Kornel; Bertram Truong
+utf_types 1.0.0 (Apache-2.0 OR MIT): Henri Sivonen
+utf8_iter 1.1.0 (Apache-2.0 OR MIT): Henri Sivonen
+uuid 1.29.2 (Apache-2.0 OR MIT): the contributors to https://github.com/uuid-rs/uuid
+version_check 0.9.5 (MIT/Apache-2.0): Sergio Benitez
+vsimd 0.8.0 (MIT): the contributors to https://github.com/Nugine/simd
+walkdir 2.5.0 (Unlicense/MIT): Andrew Gallant
+want 0.3.2 (MIT): Sean McArthur
+wasi 0.11.1+wasi-snapshot-preview1 (Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT): The Cranelift Project Developers
+wasip2 1.0.4+wasi-0.2.12 (Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT): the contributors to https://github.com/bytecodealliance/wasi-rs
+wasm-bindgen 0.2.130 (MIT OR Apache-2.0): The wasm-bindgen Developers
+wasm-bindgen-futures 0.4.80 (MIT OR Apache-2.0): The wasm-bindgen Developers
+wasm-bindgen-macro 0.2.130 (MIT OR Apache-2.0): The wasm-bindgen Developers
+wasm-bindgen-macro-support 0.2.130 (MIT OR Apache-2.0): The wasm-bindgen Developers
+wasm-bindgen-shared 0.2.130 (MIT OR Apache-2.0): The wasm-bindgen Developers
+wasm-streams 0.5.0 (MIT OR Apache-2.0): Mattias Buelens
+web-sys 0.3.107 (MIT OR Apache-2.0): The wasm-bindgen Developers
+web-time 1.1.0 (MIT OR Apache-2.0): the contributors to https://github.com/daxpedda/web-time
+webpki-root-certs 1.0.11 (CDLA-Permissive-2.0): the contributors to https://github.com/rustls/webpki-roots
+winapi-util 0.1.11 (Unlicense OR MIT): Andrew Gallant
+windows_aarch64_gnullvm 0.52.6 (MIT OR Apache-2.0): Microsoft
+windows_aarch64_msvc 0.52.6 (MIT OR Apache-2.0): Microsoft
+windows_i686_gnu 0.52.6 (MIT OR Apache-2.0): Microsoft
+windows_i686_gnullvm 0.52.6 (MIT OR Apache-2.0): Microsoft
+windows_i686_msvc 0.52.6 (MIT OR Apache-2.0): Microsoft
+windows_x86_64_gnu 0.52.6 (MIT OR Apache-2.0): Microsoft
+windows_x86_64_gnullvm 0.52.6 (MIT OR Apache-2.0): Microsoft
+windows_x86_64_msvc 0.52.6 (MIT OR Apache-2.0): Microsoft
+windows-core 0.62.2 (MIT OR Apache-2.0): the contributors to https://github.com/microsoft/windows-rs
+windows-implement 0.60.2 (MIT OR Apache-2.0): the contributors to https://github.com/microsoft/windows-rs
+windows-interface 0.59.3 (MIT OR Apache-2.0): the contributors to https://github.com/microsoft/windows-rs
+windows-link 0.2.1 (MIT OR Apache-2.0): the contributors to https://github.com/microsoft/windows-rs
+windows-registry 0.6.1 (MIT OR Apache-2.0): the contributors to https://github.com/microsoft/windows-rs
+windows-result 0.4.1 (MIT OR Apache-2.0): the contributors to https://github.com/microsoft/windows-rs
+windows-strings 0.5.1 (MIT OR Apache-2.0): the contributors to https://github.com/microsoft/windows-rs
+windows-sys 0.52.0 (MIT OR Apache-2.0): Microsoft
+windows-sys 0.61.2 (MIT OR Apache-2.0): the contributors to https://github.com/microsoft/windows-rs
+windows-targets 0.52.6 (MIT OR Apache-2.0): Microsoft
+winnow 0.5.40 (MIT): the contributors to https://github.com/winnow-rs/winnow
+wit-bindgen 0.57.1 (Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT): Alex Crichton
+wnaf 0.14.1 (Apache-2.0 OR MIT): RustCrypto Developers
+writeable 0.6.4 (Unicode-3.0): The ICU4X Project Developers
+xmlparser 0.13.6 (MIT/Apache-2.0): Yevhenii Reizner
+yoke 0.8.4 (Unicode-3.0): Manish Goregaokar
+yoke-derive 0.8.4 (Unicode-3.0): Manish Goregaokar
+zerocopy 0.8.63 (BSD-2-Clause OR Apache-2.0 OR MIT): the contributors to https://github.com/google/zerocopy
+zerocopy-derive 0.8.63 (BSD-2-Clause OR Apache-2.0 OR MIT): the contributors to https://github.com/google/zerocopy
+zerofrom 0.1.8 (Unicode-3.0): The ICU4X Project Developers
+zerofrom-derive 0.1.8 (Unicode-3.0): Manish Goregaokar
+zeroize 1.9.1 (Apache-2.0 OR MIT): The RustCrypto Project Developers
+zerotrie 0.2.5 (Unicode-3.0): The ICU4X Project Developers
+zerovec 0.11.9 (Unicode-3.0): The ICU4X Project Developers
+zerovec-derive 0.11.7 (Unicode-3.0): Manish Goregaokar
+zmij 1.0.23 (MIT): David Tolnay
+zstd 0.14.3 (BSD-3-Clause): Alexandre Bury
+zstd-safe 8.2.0 (BSD-3-Clause): Alexandre Bury
+zstd-sys 2.1.2+zstd.1.5.7 (BSD-3-Clause): Alexandre Bury

@@ -2,3 +2,4 @@ src/rust/target
 src/Makevars
 *.o
 *.so
+docs/

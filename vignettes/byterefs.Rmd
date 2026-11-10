@@ -1,0 +1,172 @@
+---
+title: "Chunk references as tables: byterefs and writing through DBI"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Chunk references as tables: byterefs and writing through DBI}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r, include = FALSE}
+has_sqlite <- requireNamespace("RSQLite", quietly = TRUE) && requireNamespace("blob", quietly = TRUE)
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", eval = has_sqlite)
+options(width = 100)
+```
+
+> **Draft.** A first pass written to be rewritten. It runs offline on
+> `ic_example_repo()`, so it is checked with the package. Notes in
+> *italics* mark where the real version should say more.
+
+A virtual Icechunk array does not hold its data. It holds references:
+for each chunk, a file, a byte offset and a length. A table is the
+natural form for that information: one row per chunk, with columns for
+the chunk's indices and where its bytes are. icechunkr works with
+references in that form both ways. It reads any snapshot out as tables
+and writes tables back in as commits.
+
+The layout is **byterefs** (version 0.1), from
+[raad.virtualize](https://github.com/mdsumner/raad.virtualize). Its tables:
+
+| table | one row per | key columns |
+|---|---|---|
+| `meta` | key | `key`, `value` |
+| `arrays` | array | `array`, `kind`, `storage`, `dims`, `shape`, `chunks`, `dtype`, `fill`, `codec`, `attrs` |
+| `sources` | source file | `source`, `size`, `mtime`, `etag` |
+| `refs_<array>` | chunk | `dim_0`, `dim_1`, …, `path`, `offset`, `size`, `data` |
+
+*To add: why tables (SQL, Parquet, joins with file catalogues), and how
+this relates to kerchunk and VirtualiZarr manifests.*
+
+## Out: a snapshot as tables
+
+```{r}
+library(icechunkr)
+ex <- ic_example_repo()
+repo <- ic_repo_open(ex$path, authorize = ex$authorize)
+s <- ic_session_readonly(repo, branch = "main")
+
+br <- ic_to_byterefs(s)
+br
+br$arrays[, c("array", "kind", "storage", "shape", "chunks", "dtype")]
+br$refs("from_bin")[, c("dim_0", "dim_1", "path", "offset", "size")]
+```
+
+`from_bin` and `from_nc` are virtual: their rows point into files. The
+chunks of `small` were written through a session and are small enough
+for Icechunk to keep inline, so their bytes travel in the `data` column.
+
+The same tables can be written to a file, a SQLite database that any SQL
+client can open:
+
+```{r}
+db <- tempfile(fileext = ".sqlite")
+ic_to_byterefs(s, dsn = db)
+con <- DBI::dbConnect(RSQLite::SQLite(), db)
+DBI::dbListTables(con)
+DBI::dbGetQuery(con, "SELECT source, mtime FROM sources")
+DBI::dbDisconnect(con)
+```
+
+## In: tables as a repository
+
+`ic_repo_from_byterefs()` goes the other way. It creates a repository,
+declares the virtual chunk containers the paths need, writes every
+array, and commits once.
+
+```{r}
+br2 <- ic_byterefs_read(db)
+copy <- ic_repo_from_byterefs(br2, tempfile("copy-"), authorize = ex$authorize,
+                              message = "rebuilt from byterefs")
+s2 <- ic_session_readonly(copy, branch = "main")
+identical(ic_get(s2, "from_bin/c/2/0"), ic_get(s, "from_bin/c/2/0"))
+cmp <- ic_byterefs_compare(br, ic_to_byterefs(s2))
+all(cmp$ok)
+br2$close()   # a byterefs store read from SQLite holds the connection open
+```
+
+When the `sources` table has a modification time (or an ETag, for
+objects in a bucket), it is recorded as a checksum on that source's
+references. If the source file changes after the references were made,
+Icechunk refuses to read its chunks rather than return the wrong bytes.
+The example repository was made without checksums, so its `mtime` column
+is empty.
+
+*To add: remap rules and targets, where the same references resolve to a
+scratch path when building and to a public URL when published
+(`meta.default_target`, `ic_byterefs_containers(br, target =)`). This is
+the raad.virtualize workflow and is better told from there.*
+
+## Writing through DBI
+
+The DBI connection is a way to read, and also a way to write. Appending
+rows to `arrays` creates arrays, and appending rows to `refs_<array>`
+sets chunk references. A transaction becomes one Icechunk commit.
+
+Start an empty repository that may read from the example's source
+directory:
+
+```{r}
+library(DBI)
+path <- tempfile("built-")
+con <- dbConnect(Icechunk(), path, create = TRUE,
+                 containers = ic_container(ex$authorize, "local", path = ex$source),
+                 authorize = ex$authorize)
+dbListTables(con)
+```
+
+Describe an array, then its chunks. `grid.bin` holds 64 x 48
+little-endian float32 values. Here they become an array of 16-row
+chunks:
+
+```{r}
+dbBegin(con)
+dbAppendTable(con, "arrays", data.frame(
+  array = "grid", kind = "data", storage = "referenced",
+  dims = '["y","x"]', shape = "[64,48]", chunks = "[16,48]", dtype = "<f4",
+  fill = "NaN", attrs = '{"units":"none"}'))
+dbAppendTable(con, "refs_grid", data.frame(
+  dim_0 = 0:3, dim_1 = 0L,
+  path = file.path(ex$source, "grid.bin"), offset = (0:3) * 3072, size = 3072))
+dbCommit(con, "grid: four blocks of grid.bin")
+dbGetQuery(con, 'SELECT dim_0, "offset", size FROM refs_grid')
+```
+
+The bytes come from the source file, through Icechunk:
+
+```{r}
+rs <- ic_session_readonly(ic_repo_open(path, authorize = ex$authorize), branch = "main")
+x <- readBin(ic_get(rs, "grid/c/3/0"), "double", 768, size = 4, endian = "little")
+all.equal(x, ex$values[2304 + 1:768])
+```
+
+Rows added later for a source already in the repository take that
+source's checksum, if it has one, from the `sources` table. Without
+`dbBegin()`, each append commits on its own:
+
+```{r}
+dbAppendTable(con, "refs_grid", data.frame(
+  dim_0 = 3L, dim_1 = 0L, path = file.path(ex$source, "grid.bin"), offset = 0, size = 3072))
+dbGetQuery(con, "SELECT message FROM ancestry")
+```
+
+`dbRollback()` discards an open transaction. If someone else committed to
+the branch in the meantime, `dbCommit(rebase = TRUE)` replays your changes
+on top of theirs, with Icechunk's conflict detection deciding what can
+merge.
+
+```{r}
+other <- ic_session_writable(ic_repo_open(path, authorize = ex$authorize), "main")
+ic_set(other, "zarr.json", charToRaw('{"zarr_format":3,"node_type":"group","attributes":{"by":"someone else"}}'))
+ic_commit(other, "a concurrent edit")
+
+dbBegin(con)
+dbAppendTable(con, "refs_grid", data.frame(
+  dim_0 = 2L, dim_1 = 0L, path = file.path(ex$source, "grid.bin"), offset = 6144, size = 3072))
+dbCommit(con, "restore block 2", rebase = TRUE)
+dbGetQuery(con, "SELECT message FROM ancestry")
+dbDisconnect(con)
+```
+
+*To add: building a catalogue from a file listing (GDAL / netCDF
+metadata to byterefs rows), and the size of real catalogues: the public
+OISST store has 16,482 references per variable, and GHRSST 935k.*

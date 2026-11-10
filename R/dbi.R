@@ -293,7 +293,7 @@ setMethod("dbConnect", "IcechunkDriver", function(drv, storage, branch = NULL, t
 .dbi_tables <- function(state) {
   nodes <- ic_nodes(state$session)
   arrs <- sub("^/", "", nodes$path[nodes$type == "array"])
-  c(.DBI_FIXED, paste0("refs_", arrs))
+  c(.DBI_FIXED, if (length(arrs)) paste0("refs_", arrs))
 }
 
 .dbi_read <- function(state, name) {
@@ -621,6 +621,9 @@ setMethod("dbAppendTable", "IcechunkConnection", function(conn, name, value, ...
   if (identical(name, "arrays")) {
     a <- .br_arrays_parse(.dbi_arrays_in(value))
     return(.dbi_autocommit(state, sprintf("DBI: create %d arrays", nrow(a)), function() {
+      # a repository made by dbConnect(create = TRUE) has no root group yet
+      if (!isTRUE(ic_exists(state$session, "zarr.json")))
+        ic_set(state$session, "zarr.json", charToRaw('{"zarr_format":3,"node_type":"group","attributes":{}}'))
       for (i in seq_len(nrow(a))) .br_write_array_meta(state$session, a[i, ])
       nrow(a)
     }))

@@ -1,0 +1,58 @@
+# url: set at the go-public move (e.g. https://hypertidy.github.io/icechunk-r/)
+template:
+  bootstrap: 5
+
+navbar:
+  structure:
+    left: [intro, reference, articles]
+    right: [search, github]
+
+articles:
+  - title: Articles
+    navbar: ~
+    contents:
+      - icechunkr
+      - byterefs
+
+reference:
+  - title: Getting started
+    contents:
+      - ic_example_repo
+      - Icechunk
+  - title: Storage and repositories
+    desc: Where a repository lives, and opening or creating it.
+    contents:
+      - ic_storage
+      - ic_repo_open
+      - ic_credentials
+      - ic_repo_containers
+  - title: Branches, tags and history
+    contents:
+      - ic_refs
+  - title: Sessions and keys
+    desc: Read-only and writable views of a version; Zarr keys and chunk bytes.
+    contents:
+      - ic_session_readonly
+      - ic_store
+      - ic_commit
+      - ic_session_bytes
+  - title: Chunk references
+    desc: Virtual references, and every chunk's reference as a table.
+    contents:
+      - ic_set_virtual_ref
+      - ic_chunk_refs
+      - ic_refs_arrow
+      - ic_manifest_concurrency
+  - title: Byterefs tables
+    desc: Chunk references in the byterefs table layout, both ways.
+    contents:
+      - ic_to_byterefs
+      - ic_byterefs_read
+      - ic_repo_from_byterefs
+      - ic_write_byterefs
+      - ic_byterefs_containers
+      - ic_byterefs_compare
+  - title: Other packages and build information
+    contents:
+      - ic_pizzarr_store
+      - ic_compiled_features

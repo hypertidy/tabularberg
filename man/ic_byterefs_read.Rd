@@ -15,7 +15,9 @@ a \code{byterefs} object: a list with \code{format_version}, \code{meta} (named
 list of strings), \code{sources}, \code{arrays} and \code{remap} data frames, and
 \code{refs(array)}, a function returning that array's global refs rows
 (\code{dim_0..}, \code{present}, \code{path}, \code{offset}, \code{size}, \code{info}, \code{data}) joined
-to the source's \code{etag}, \code{mtime} and \code{source_size}.
+to the source's \code{etag}, \code{mtime} and \code{source_size}. Read from SQLite,
+\code{refs()} queries the file lazily, so the connection stays open: call
+\verb{$close()} when done (functions given a file path close it themselves).
 }
 \description{
 Reads a byterefs table, either the SQLite working store (\code{store.sqlite},
@@ -34,5 +36,6 @@ if (requireNamespace("RSQLite", quietly = TRUE)) {
   print(br)
   print(br$arrays[, c("array", "kind", "shape", "chunks", "dtype")])
   print(head(br$refs("from_bin")))
+  br$close()
 }
 }

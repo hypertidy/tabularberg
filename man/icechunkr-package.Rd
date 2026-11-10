@@ -24,5 +24,10 @@ Authors:
   \item Michael D. Sumner \email{mdsumner@gmail.com}
 }
 
+Other contributors:
+\itemize{
+  \item Authors of the dependency Rust crates (see inst/AUTHORS) [contributor, copyright holder]
+}
+
 }
 \keyword{internal}

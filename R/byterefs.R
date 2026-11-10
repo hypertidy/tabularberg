@@ -20,7 +20,9 @@
 #'   list of strings), `sources`, `arrays` and `remap` data frames, and
 #'   `refs(array)`, a function returning that array's global refs rows
 #'   (`dim_0..`, `present`, `path`, `offset`, `size`, `info`, `data`) joined
-#'   to the source's `etag`, `mtime` and `source_size`.
+#'   to the source's `etag`, `mtime` and `source_size`. Read from SQLite,
+#'   `refs()` queries the file lazily, so the connection stays open: call
+#'   `$close()` when done (functions given a file path close it themselves).
 #' @example inst/examples/ic_byterefs_read.R
 #' @export
 ic_byterefs_read <- function(x) {
@@ -90,6 +92,8 @@ ic_byterefs_read <- function(x) {
          FROM %s r LEFT JOIN sources s ON s.source = r.path',
       DBI::dbQuoteIdentifier(con, v)))
     for (f in c(grep("^dim_", names(r), value = TRUE), "offset", "size", "mtime", "source_size")) r[[f]] <- .dbl(r[[f]])
+    # an all-NULL column comes back logical (e.g. path, for inline chunks)
+    for (f in intersect(c("path", "info", "etag"), names(r))) r[[f]] <- as.character(r[[f]])
     r
   }
   structure(list(format_version = .br_check_format(meta$format_version), meta = meta,
@@ -605,7 +609,8 @@ ic_repo_from_byterefs <- function(br, storage, target = NULL, message = NULL, au
 
 # root group attributes -> meta, remap rules and the byterefs bookkeeping
 .br_root <- function(session) {
-  root <- jsonlite::fromJSON(rawToChar(ic_get(session, "zarr.json")), simplifyVector = FALSE)
+  zj <- ic_get(session, "zarr.json")                 # absent in a new, empty repository
+  root <- if (is.null(zj)) list() else jsonlite::fromJSON(rawToChar(zj), simplifyVector = FALSE)
   ra <- root$attributes %||% list()
   brx <- ra$byterefs
   ra$byterefs <- NULL

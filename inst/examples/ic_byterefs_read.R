@@ -8,4 +8,5 @@ if (requireNamespace("RSQLite", quietly = TRUE)) {
   print(br)
   print(br$arrays[, c("array", "kind", "shape", "chunks", "dtype")])
   print(head(br$refs("from_bin")))
+  br$close()
 }

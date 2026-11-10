@@ -7,3 +7,7 @@
 ^src/\.cargo$
 ^vignettes/.*\.orig$
 ^vignettes/precompute\.R$
+^tools/authors\.R$
+^_pkgdown\.yml$
+^docs$
+^pkgdown$
