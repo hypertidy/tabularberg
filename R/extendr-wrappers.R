@@ -170,7 +170,7 @@ ic_refs_columns_ <- function(s, array_path, ranges) .Call(wrap__ic_refs_columns_
 #' path and data. Writes the stream into the ArrowArrayStream at
 #' `stream_addr` (from nanoarrow). Returns list(batches, native, rows).
 #' @noRd
-ic_refs_arrow_ <- function(s, array_path, ranges, rules_prefix, rules_replacement, batch_rows, stream_addr) .Call(wrap__ic_refs_arrow_, s, array_path, ranges, rules_prefix, rules_replacement, batch_rows, stream_addr)
+ic_refs_arrow_ <- function(s, array_path, ranges, rules_prefix, rules_replacement, batch_rows, native_bytes, stream_addr) .Call(wrap__ic_refs_arrow_, s, array_path, ranges, rules_prefix, rules_replacement, batch_rows, native_bytes, stream_addr)
 
 #' Set how many manifests are fetched concurrently (1 = sequential, as
 #' Icechunk's own iterators do). Returns the previous value.

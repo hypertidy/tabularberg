@@ -19,7 +19,8 @@ SystemRequirements: Cargo (Rust's package manager), rustc >= 1.95
 Imports:
     DBI,
     jsonlite,
-    methods
+    methods,
+    utils
 Suggests:
     testthat (>= 3.0.0),
     RSQLite,

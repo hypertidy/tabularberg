@@ -72,15 +72,20 @@ setClass("IcechunkResult", contains = "DBIResult", slots = c(state = "environmen
 #'   reserved words, so quote those columns (`"offset"`, `"array"`); SQL
 #'   written that way runs on both engines.
 #' @param arrow with `sql = "duckdb"`, hand `refs_<array>` tables to DuckDB
-#'   as Arrow record batches built in Rust ([ic_refs_arrow()]) rather than
-#'   R vectors: less memory, faster first query. Tables with native chunks
-#'   fall back to the R path, so results are the same. `NA` (default):
-#'   when nanoarrow and arrow are installed.
-#' @param pushdown for a statement over one `refs_<array>` table with a
-#'   plain conjunctive `WHERE` on `dim_k` (=, <, <=, >, >=, BETWEEN, IN),
-#'   read only that slab of chunks (and, with split manifests, only the
-#'   manifests covering it) instead of the whole table. The SQL still
-#'   applies the full predicate, so results do not change.
+#'   as Arrow record batches built in Rust ([ic_refs_arrow()], native
+#'   chunks' bytes included) rather than R vectors: less memory, faster
+#'   first query, same results. `NA` (default): when nanoarrow and arrow
+#'   are installed.
+#' @param pushdown for a statement with a plain conjunctive `WHERE` (no
+#'   `OR`, `NOT`, `CASE`, subquery or set operation) on `dim_k`
+#'   (`=`, `<`, `<=`, `>`, `>=`, `BETWEEN`, `IN`), read only that slab of chunks of each
+#'   `refs_<array>` table it names (and, with split manifests, only the
+#'   manifests covering it) instead of the whole table. In joins, a
+#'   predicate counts for a table when qualified by its name or alias, and
+#'   ranges carry across `a.dim_i = b.dim_j` equalities, so a filter on one
+#'   side narrows the other; self-joins and `NATURAL` / `USING` joins are
+#'   read whole. The SQL still applies the full predicate, so results do
+#'   not change.
 #' @param ... unused.
 #' @export
 setMethod("dbConnect", "IcechunkDriver", function(drv, storage, branch = NULL, tag = NULL, snapshot = NULL,
@@ -184,47 +189,110 @@ setMethod("dbConnect", "IcechunkDriver", function(drv, storage, branch = NULL, t
   rng
 }
 
-# Conservative pushdown: a single refs_<array> table, a plain conjunctive
-# WHERE (no OR / NOT / CASE / subquery / set operation), and integer
-# comparisons on dim_k. Returns chunk ranges (a superset of the rows the
-# WHERE keeps; the SQL still applies the full predicate) or NULL.
+# Conservative pushdown for one refs_<array> table of a statement: a plain
+# conjunctive WHERE (no OR / NOT / CASE / subquery / set operation) with
+# integer comparisons on dim_k. With several refs tables (joins), a
+# predicate counts for a table only when qualified by its name or alias,
+# and ranges carry across equalities `x.dim_i = y.dim_j` (in ON or WHERE):
+# with a conjunctive WHERE every output row satisfies both, whatever the
+# join type. Self-joins, NATURAL and USING joins are not pushed down.
+# Returns chunk ranges (a superset of the rows the statement keeps; the
+# SQL still applies the full predicate) or NULL.
 .dbi_slab <- function(statement, table, nd) {
   st <- gsub("'[^']*'", "''", statement)                       # ignore string literals
   if (grepl("\\b(OR|NOT|CASE|UNION|EXCEPT|INTERSECT)\\b", st, ignore.case = TRUE, perl = TRUE)) return(NULL)
   if (grepl("\\(\\s*SELECT\\b", st, ignore.case = TRUE, perl = TRUE)) return(NULL)
-  q <- paste0("\\Q", table, "\\E")
-  if (lengths(regmatches(st, gregexpr(paste0("(^|[^A-Za-z0-9_])[\"`\\[]?", q, "[\"`\\]]?([^A-Za-z0-9_/]|$)"), st, perl = TRUE))) != 1L) return(NULL)
+  # every refs_<array> table named, with how often and under which aliases
+  tok <- "(?<![\\w.])(?:\"(refs_[^\"]+)\"|`(refs_[^`]+)`|\\[(refs_[^\\]]+)\\]|(?<![\"`\\[])(refs_[\\w]+))(?![\\w]|\\s*\\.)"
+  kw <- "(?i:JOIN|INNER|LEFT|RIGHT|FULL|OUTER|CROSS|NATURAL|ON|USING|WHERE|GROUP|ORDER|LIMIT|HAVING|WINDOW|QUALIFY|LATERAL|SEMI|ANTI|ASOF|POSITIONAL|AS)"
+  m <- regmatches(st, gregexpr(paste0(tok, "(?:\\s+(?i:AS)\\s+|\\s+)(?!", kw, "\\b)([\"`]?)([A-Za-z_]\\w*)\\5(?![\\w.])|", tok), st, perl = TRUE))[[1]]
+  if (!length(m)) return(NULL)
+  name_of <- function(x) {
+    g <- regmatches(x, regexec(tok, x, perl = TRUE))[[1]][-1]
+    g[nzchar(g)][1]
+  }
+  alias_of <- function(x) {
+    nm <- name_of(x)
+    rest <- sub(tok, "", x, perl = TRUE)
+    a <- gsub("[\"`]", "", trimws(sub("^\\s*(?i:AS)\\s+", " ", rest, perl = TRUE)))
+    if (nzchar(a) && a != nm) a else character()
+  }
+  names_seen <- vapply(m, name_of, "")
+  if (sum(names_seen == table) != 1L) return(NULL)               # absent, or a self-join
+  tabs <- unique(names_seen)
+  if (length(tabs) > 1L && grepl("\\b(NATURAL|USING)\\b", st, ignore.case = TRUE, perl = TRUE)) return(NULL)
+  quals <- lapply(stats::setNames(tabs, tabs), function(t) {
+    if (sum(names_seen == t) != 1L) return(character())          # ambiguous: never matched
+    c(t, alias_of(m[names_seen == t]))
+  })
   w <- regmatches(st, regexec("(?is)\\bWHERE\\b(.*?)(\\bGROUP\\s+BY\\b|\\bORDER\\s+BY\\b|\\bLIMIT\\b|\\bHAVING\\b|\\bWINDOW\\b|\\bQUALIFY\\b|$)", st, perl = TRUE))[[1]]
-  if (length(w) < 2L) return(NULL)
-  w <- w[2]
+  w <- if (length(w) >= 2L) w[2] else ""
   # dbplyr asks for a table's columns with WHERE (0 = 1): an empty slab
   if (grepl("(^|[^\\w.])0\\s*=\\s*1([^\\w.]|$)", w, perl = TRUE)) return(rep(list(c(0, 0)), nd))
-  int <- "(-?\\d+)(?:\\.0+)?(?![\\d.eE])"
-  col <- function(k) paste0("(?:\\w+\\.)?[\"`]?dim_", k, "[\"`]?")
-  rng <- rep(list(c(0, Inf)), nd); hit <- FALSE
-  num <- function(m, i) as.numeric(m[, i])
-  for (k in seq_len(nd) - 1L) {
-    lo <- 0; hi <- Inf
-    m <- regmatches(w, gregexpr(paste0("(?i)", col(k), "\\s+BETWEEN\\s+", int, "\\s+AND\\s+", int), w, perl = TRUE))[[1]]
-    for (x in m) { v <- as.numeric(regmatches(x, gregexpr("-?\\d+(?:\\.0+)?(?![\\w])", x, perl = TRUE))[[1]]); v <- v[length(v) - 1:0]; lo <- max(lo, v[1]); hi <- min(hi, v[2] + 1) }
-    w2 <- gsub(paste0("(?i)", col(k), "\\s+BETWEEN\\s+", int, "\\s+AND\\s+", int), " ", w, perl = TRUE)
-    m <- regmatches(w2, gregexpr(paste0("(?i)", col(k), "\\s+IN\\s*\\(([-\\d.,\\s]+)\\)"), w2, perl = TRUE))[[1]]
-    for (x in m) { v <- as.numeric(regmatches(sub("^[^(]*\\(", "", x), gregexpr("-?\\d+(?:\\.0+)?", sub("^[^(]*\\(", "", x), perl = TRUE))[[1]]); lo <- max(lo, min(v)); hi <- min(hi, max(v) + 1) }
-    m <- regmatches(w2, gregexpr(paste0(col(k), "\\s*(<=|>=|<>|!=|=|<|>)\\s*", int), w2, perl = TRUE))[[1]]
-    for (x in m) {
-      op <- regmatches(x, regexpr("<=|>=|<>|!=|=|<|>", x)); v <- as.numeric(regmatches(x, regexpr("-?\\d+(?:\\.0+)?\\s*$", x, perl = TRUE)))
-      switch(op, "=" = { lo <- max(lo, v); hi <- min(hi, v + 1) }, ">=" = lo <- max(lo, v), ">" = lo <- max(lo, v + 1),
-             "<=" = hi <- min(hi, v + 1), "<" = hi <- min(hi, v), NULL)
-    }
-    m <- regmatches(w2, gregexpr(paste0(int, "\\s*(<=|>=|=|<|>)\\s*", col(k), "(?![\\w])"), w2, perl = TRUE))[[1]]
-    for (x in m) {
-      op <- regmatches(x, regexpr("<=|>=|=|<|>", x)); v <- as.numeric(regmatches(x, regexpr("^\\s*-?\\d+", x)))
-      switch(op, "=" = { lo <- max(lo, v); hi <- min(hi, v + 1) }, "<=" = lo <- max(lo, v), "<" = lo <- max(lo, v + 1),
-             ">=" = hi <- min(hi, v + 1), ">" = hi <- min(hi, v), NULL)
-    }
-    if (lo > 0 || is.finite(hi)) { hit <- TRUE; rng[[k + 1L]] <- c(lo, max(lo, hi)) }
+  qre <- function(q) paste0("(?:[\"`\\[]?(?:", paste0("\\Q", q, "\\E", collapse = "|"), ")[\"`\\]]?\\.)")
+  # dim_k of table t: qualified by its name or alias; unqualified only when
+  # it is the only refs table in the statement
+  colre <- function(t, k) {
+    q <- quals[[t]]
+    if (!length(q)) return(NULL)
+    d <- paste0("[\"`\\[]?dim_", k, "[\"`\\]]?(?![\\w])")
+    if (length(tabs) == 1L) paste0("(?:", qre(q), "|(?<![\\w.\"`\\]]))", d) else paste0(qre(q), d)
   }
-  if (hit) rng else NULL
+  rng <- function(t, k) .dbi_slab_range(w, colre(t, k))
+  # equalities between dim columns of two tables (ON or WHERE)
+  eq <- list()
+  if (length(tabs) > 1L) {
+    side <- "[\"`\\[]?([A-Za-z_][\\w/]*)[\"`\\]]?\\.[\"`\\[]?dim_(\\d+)[\"`\\]]?(?![\\w])"
+    e <- regmatches(st, gregexpr(paste0(side, "\\s*=\\s*", side), st, perl = TRUE))[[1]]
+    owner <- function(q) { o <- names(quals)[vapply(quals, function(x) q %in% x, NA)]; if (length(o) == 1L) o else NA }
+    for (x in e) {
+      g <- regmatches(x, regexec(paste0(side, "\\s*=\\s*", side), x, perl = TRUE))[[1]]
+      ta <- owner(g[2]); tb <- owner(g[4])
+      if (!is.na(ta) && !is.na(tb) && ta != tb) eq[[length(eq) + 1L]] <- list(ta, as.integer(g[3]), tb, as.integer(g[5]))
+    }
+  }
+  key <- function(t, k) paste0(t, "\r", k)
+  ks <- unique(c(lapply(seq_len(nd) - 1L, function(k) list(table, k)),
+                 unlist(lapply(eq, function(x) list(list(x[[1]], x[[2]]), list(x[[3]], x[[4]]))), recursive = FALSE)))
+  R <- list()
+  for (x in ks) R[[key(x[[1]], x[[2]])]] <- rng(x[[1]], x[[2]])
+  for (it in seq_len(length(eq) + 1L)) {                        # carry ranges across equalities
+    changed <- FALSE
+    for (x in eq) {
+      a <- key(x[[1]], x[[2]]); b <- key(x[[3]], x[[4]])
+      v <- c(max(R[[a]][1], R[[b]][1]), min(R[[a]][2], R[[b]][2]))
+      if (!identical(v, R[[a]]) || !identical(v, R[[b]])) { R[[a]] <- R[[b]] <- v; changed <- TRUE }
+    }
+    if (!changed) break
+  }
+  out <- lapply(seq_len(nd) - 1L, function(k) { v <- R[[key(table, k)]]; c(v[1], max(v[1], v[2])) })
+  if (any(vapply(out, function(v) v[1] > 0 || is.finite(v[2]), NA))) out else NULL
+}
+
+# [lo, hi) of one column from the conjunctive predicates in `w` (c(0, Inf)
+# when none, or when `col` is NULL)
+.dbi_slab_range <- function(w, col) {
+  lo <- 0; hi <- Inf
+  if (is.null(col) || !nzchar(w)) return(c(lo, hi))
+  int <- "(-?\\d+)(?:\\.0+)?(?![\\d.eE])"
+  m <- regmatches(w, gregexpr(paste0("(?i)", col, "\\s+BETWEEN\\s+", int, "\\s+AND\\s+", int), w, perl = TRUE))[[1]]
+  for (x in m) { v <- as.numeric(regmatches(x, gregexpr("-?\\d+(?:\\.0+)?(?![\\w])", x, perl = TRUE))[[1]]); v <- v[length(v) - 1:0]; lo <- max(lo, v[1]); hi <- min(hi, v[2] + 1) }
+  w2 <- gsub(paste0("(?i)", col, "\\s+BETWEEN\\s+", int, "\\s+AND\\s+", int), " ", w, perl = TRUE)
+  m <- regmatches(w2, gregexpr(paste0("(?i)", col, "\\s+IN\\s*\\(([-\\d.,\\s]+)\\)"), w2, perl = TRUE))[[1]]
+  for (x in m) { y <- sub("^.*\\bIN\\s*\\(", "", x, ignore.case = TRUE, perl = TRUE); v <- as.numeric(regmatches(y, gregexpr("-?\\d+(?:\\.0+)?", y, perl = TRUE))[[1]]); lo <- max(lo, min(v)); hi <- min(hi, max(v) + 1) }
+  m <- regmatches(w2, gregexpr(paste0(col, "\\s*(<=|>=|<>|!=|=|<|>)\\s*", int), w2, perl = TRUE))[[1]]
+  for (x in m) {
+    op <- regmatches(x, regexpr("(<=|>=|<>|!=|=|<|>)(?=\\s*-?\\d+(?:\\.0+)?\\s*$)", x, perl = TRUE)); v <- as.numeric(regmatches(x, regexpr("-?\\d+(?:\\.0+)?\\s*$", x, perl = TRUE)))
+    switch(op, "=" = { lo <- max(lo, v); hi <- min(hi, v + 1) }, ">=" = lo <- max(lo, v), ">" = lo <- max(lo, v + 1),
+           "<=" = hi <- min(hi, v + 1), "<" = hi <- min(hi, v), NULL)
+  }
+  m <- regmatches(w2, gregexpr(paste0(int, "\\s*(<=|>=|=|<|>)\\s*", col), w2, perl = TRUE))[[1]]
+  for (x in m) {
+    op <- regmatches(x, regexpr("<=|>=|=|<|>", x)); v <- as.numeric(regmatches(x, regexpr("^\\s*-?\\d+", x)))
+    switch(op, "=" = { lo <- max(lo, v); hi <- min(hi, v + 1) }, "<=" = lo <- max(lo, v), "<" = lo <- max(lo, v + 1),
+           ">=" = hi <- min(hi, v + 1), ">" = hi <- min(hi, v), NULL)
+  }
+  c(lo, max(lo, hi))
 }
 
 .DBI_FIXED <- c("meta", "arrays", "sources", "branches", "tags", "ancestry", "nodes")
@@ -385,13 +453,12 @@ setMethod("dbListFields", c("IcechunkConnection", "character"), function(conn, n
   } else if (identical(state$engine, "duckdb")) duckdb::duckdb_unregister(state$sql, t) else DBI::dbRemoveTable(state$sql, t)
 }
 
-# register refs_<array> with DuckDB from Rust-built Arrow batches; FALSE
-# (nothing registered) if the table has native chunks, whose bytes only
-# the R path fills in
+# register refs_<array> with DuckDB from Rust-built Arrow batches (native
+# chunks' bytes fetched in Rust too). Collected into an Arrow table, as
+# DuckDB may scan a registered table more than once.
 .dbi_put_arrow <- function(state, t, slab) {
   nm <- substring(t, 6L)
   st <- .refs_arrow(state$session, paste0("/", nm), slab, .dbi_root(state)$rules)
-  if (attr(st, "info")$native > 0L) { st$release(); return(FALSE) }
   duckdb::duckdb_register_arrow(state$sql, t, arrow::as_arrow_table(st))
   state$sql_arrow <- c(state$sql_arrow, t)
   TRUE

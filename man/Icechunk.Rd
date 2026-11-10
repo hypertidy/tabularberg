@@ -133,17 +133,22 @@ faster on large refs tables. In DuckDB \code{offset} and \code{array} are
 reserved words, so quote those columns (\code{"offset"}, \code{"array"}); SQL
 written that way runs on both engines.}
 
-\item{pushdown}{for a statement over one \verb{refs_<array>} table with a
-plain conjunctive \code{WHERE} on \code{dim_k} (=, <, <=, >, >=, BETWEEN, IN),
-read only that slab of chunks (and, with split manifests, only the
-manifests covering it) instead of the whole table. The SQL still
-applies the full predicate, so results do not change.}
+\item{pushdown}{for a statement with a plain conjunctive \code{WHERE} (no
+\code{OR}, \code{NOT}, \code{CASE}, subquery or set operation) on \code{dim_k}
+(\code{=}, \code{<}, \code{<=}, \code{>}, \code{>=}, \code{BETWEEN}, \code{IN}), read only that slab of chunks of each
+\verb{refs_<array>} table it names (and, with split manifests, only the
+manifests covering it) instead of the whole table. In joins, a
+predicate counts for a table when qualified by its name or alias, and
+ranges carry across \code{a.dim_i = b.dim_j} equalities, so a filter on one
+side narrows the other; self-joins and \code{NATURAL} / \code{USING} joins are
+read whole. The SQL still applies the full predicate, so results do
+not change.}
 
 \item{arrow}{with \code{sql = "duckdb"}, hand \verb{refs_<array>} tables to DuckDB
-as Arrow record batches built in Rust (\code{\link[=ic_refs_arrow]{ic_refs_arrow()}}) rather than
-R vectors: less memory, faster first query. Tables with native chunks
-fall back to the R path, so results are the same. \code{NA} (default):
-when nanoarrow and arrow are installed.}
+as Arrow record batches built in Rust (\code{\link[=ic_refs_arrow]{ic_refs_arrow()}}, native
+chunks' bytes included) rather than R vectors: less memory, faster
+first query, same results. \code{NA} (default): when nanoarrow and arrow
+are installed.}
 
 \item{...}{unused.}
 

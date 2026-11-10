@@ -4,7 +4,7 @@
 \alias{ic_refs_arrow}
 \title{Chunk references of one array as an Arrow stream}
 \usage{
-ic_refs_arrow(session, path, chunks = NULL, batch_rows = 65536L)
+ic_refs_arrow(session, path, chunks = NULL, batch_rows = 65536L, native = TRUE)
 }
 \arguments{
 \item{session}{an \code{icechunk_session}.}
@@ -15,6 +15,9 @@ ic_refs_arrow(session, path, chunks = NULL, batch_rows = 65536L)
 indices (hi exclusive); only the manifests covering it are read.}
 
 \item{batch_rows}{rows per record batch.}
+
+\item{native}{fetch native chunks' bytes into \code{data} (concurrently, see
+\code{\link[=ic_manifest_concurrency]{ic_manifest_concurrency()}}); \code{FALSE} leaves them null.}
 }
 \value{
 a \code{nanoarrow_array_stream}.
@@ -26,10 +29,16 @@ and handed over as a \code{nanoarrow_array_stream}, without R vectors in
 between. \code{path} is dictionary-encoded (one entry per source), \code{offset}
 and \code{size} are int64, as the byterefs spec has them. Paths have the
 repository's remap rules undone (see \code{\link[=ic_write_byterefs]{ic_write_byterefs()}}); native
-chunks (bytes held by the repository) have no path and no \code{data} (fetch
-them with \code{\link[=ic_get]{ic_get()}}; \code{\link[=ic_to_byterefs]{ic_to_byterefs()}} includes them).
+chunks (bytes held by the repository) have no path, and their bytes in
+\code{data} when \code{native = TRUE}, as \code{\link[=ic_to_byterefs]{ic_to_byterefs()}} writes them.
 }
 \details{
-Consume with \code{nanoarrow::convert_array_stream()}, \code{arrow::as_arrow_table()}
-or \code{duckdb::duckdb_register_arrow()}.
+The stream is lazy: it reads the session as it is when called (later
+writes to the session are not seen), and builds each batch as the
+consumer asks for it, with one batch of read-ahead, so a large array's
+refs never sit in memory whole. Errors met while streaming (a manifest
+that cannot be fetched) are raised by the consumer.
+
+Consume with \code{nanoarrow::convert_array_stream()}, \code{arrow::as_arrow_table()},
+\code{arrow::write_dataset()} or \code{duckdb::duckdb_register_arrow()}.
 }

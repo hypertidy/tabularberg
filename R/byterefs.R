@@ -927,20 +927,28 @@ ic_byterefs_compare <- function(x, y, target = NULL) {
 #' between. `path` is dictionary-encoded (one entry per source), `offset`
 #' and `size` are int64, as the byterefs spec has them. Paths have the
 #' repository's remap rules undone (see [ic_write_byterefs()]); native
-#' chunks (bytes held by the repository) have no path and no `data` (fetch
-#' them with [ic_get()]; [ic_to_byterefs()] includes them).
+#' chunks (bytes held by the repository) have no path, and their bytes in
+#' `data` when `native = TRUE`, as [ic_to_byterefs()] writes them.
 #'
-#' Consume with `nanoarrow::convert_array_stream()`, `arrow::as_arrow_table()`
-#' or `duckdb::duckdb_register_arrow()`.
+#' The stream is lazy: it reads the session as it is when called (later
+#' writes to the session are not seen), and builds each batch as the
+#' consumer asks for it, with one batch of read-ahead, so a large array's
+#' refs never sit in memory whole. Errors met while streaming (a manifest
+#' that cannot be fetched) are raised by the consumer.
+#'
+#' Consume with `nanoarrow::convert_array_stream()`, `arrow::as_arrow_table()`,
+#' `arrow::write_dataset()` or `duckdb::duckdb_register_arrow()`.
 #'
 #' @param session an `icechunk_session`.
 #' @param path array path.
 #' @param chunks optional slab, `list(dim_0 = c(lo, hi), ...)` of chunk
 #'   indices (hi exclusive); only the manifests covering it are read.
 #' @param batch_rows rows per record batch.
+#' @param native fetch native chunks' bytes into `data` (concurrently, see
+#'   [ic_manifest_concurrency()]); `FALSE` leaves them null.
 #' @return a `nanoarrow_array_stream`.
 #' @export
-ic_refs_arrow <- function(session, path, chunks = NULL, batch_rows = 65536L) {
+ic_refs_arrow <- function(session, path, chunks = NULL, batch_rows = 65536L, native = TRUE) {
   .need("nanoarrow")
   p <- if (startsWith(path, "/")) path else paste0("/", path)
   rules <- .br_root(session)$rules
@@ -951,14 +959,13 @@ ic_refs_arrow <- function(session, path, chunks = NULL, batch_rows = 65536L) {
     if (is.na(i)) stop("no array '", path, "'", call. = FALSE)
     ranges <- .dbi_chunks_ranges(chunks, length(strsplit(n$shape[i], ",", fixed = TRUE)[[1]]))
   }
-  .refs_arrow(session, p, ranges, rules, batch_rows)
+  .refs_arrow(session, p, ranges, rules, batch_rows, native)
 }
 
-# -> nanoarrow stream with attribute "info" = list(batches, native, rows)
-.refs_arrow <- function(session, p, ranges, rules, batch_rows = 65536L) {
+# -> lazy nanoarrow stream
+.refs_arrow <- function(session, p, ranges, rules, batch_rows = 65536L, native = TRUE) {
   stream <- nanoarrow::nanoarrow_allocate_array_stream()
-  info <- .ic(ic_refs_arrow_(session$ptr, p, ranges, as.character(rules$prefix), as.character(rules$replacement),
-                             as.integer(batch_rows), nanoarrow::nanoarrow_pointer_addr_chr(stream)))
-  attr(stream, "info") <- info
+  .ic(ic_refs_arrow_(session$ptr, p, ranges, as.character(rules$prefix), as.character(rules$replacement),
+                             as.integer(batch_rows), isTRUE(native), nanoarrow::nanoarrow_pointer_addr_chr(stream)))
   stream
 }

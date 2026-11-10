@@ -317,7 +317,7 @@ async fn prefetch_manifests(
     p: &Path,
     node: &icechunk::format::snapshot::NodeSnapshot,
     slab: Option<&[(u32, u32)]>,
-) -> R<usize> {
+) -> icechunk::session::SessionResult<usize> {
     let (manifests, ndim) = match &node.node_data {
         icechunk::format::snapshot::NodeData::Array { manifests, shape, .. } => (manifests.clone(), shape.len()),
         _ => return Ok(0),
@@ -351,7 +351,7 @@ async fn prefetch_manifests(
         .collect()
         .await;
     for r in results {
-        r.map_err(ic)?;
+        r?;
     }
     Ok(n)
 }
@@ -381,55 +381,61 @@ fn slab_of(ranges: &Robj, nchunks: &[u32]) -> R<Option<Vec<(u32, u32)>>> {
     Ok(Some(v))
 }
 
+type ChunkItem = icechunk::session::SessionResult<(ChunkIndices, ChunkPayload)>;
+
+/// The chunk coordinates of a slab, last dimension fastest.
+fn slab_coords(sl: Vec<(u32, u32)>) -> impl Iterator<Item = ChunkIndices> + Send {
+    let mut next: Option<Vec<u32>> = if sl.iter().any(|r| r.0 >= r.1) { None } else { Some(sl.iter().map(|r| r.0).collect()) };
+    std::iter::from_fn(move || {
+        let cur = next.take()?;
+        let mut nx = cur.clone();
+        let mut d = nx.len();
+        while d > 0 {
+            d -= 1;
+            nx[d] += 1;
+            if nx[d] < sl[d].1 {
+                next = Some(nx);
+                break;
+            }
+            nx[d] = sl[d].0;
+        }
+        Some(ChunkIndices(cur))
+    })
+}
+
 /// All chunks of an array (session changes included), or only those in a
 /// slab: then each coordinate is resolved with `get_chunk_ref`, which reads
 /// only the manifests whose extents cover it.
+async fn chunk_stream<'a>(
+    g: &'a Session,
+    p: &'a Path,
+    node: &'a icechunk::format::snapshot::NodeSnapshot,
+    slab: Option<Vec<(u32, u32)>>,
+) -> futures::stream::BoxStream<'a, ChunkItem> {
+    match slab {
+        None => g.all_node_chunks(node).await.map(|r| r.map(|(_p, info)| (info.coord, info.payload))).boxed(),
+        Some(sl) => futures::stream::iter(slab_coords(sl))
+            .then(move |c| async move { g.get_chunk_ref(p, &c).await.map(|o| o.map(|pl| (c, pl))) })
+            .filter_map(|r| async move { r.transpose() })
+            .boxed(),
+    }
+}
+
+fn node_nchunks(node: &icechunk::format::snapshot::NodeSnapshot) -> Vec<u32> {
+    match &node.node_data {
+        icechunk::format::snapshot::NodeData::Array { shape, .. } => shape.num_chunks().collect(),
+        _ => Vec::new(),
+    }
+}
+
 fn collect_chunks(s: &RSession, p: &Path, ranges: &Robj) -> R<Vec<(ChunkIndices, ChunkPayload)>> {
     block_on(async {
         let g = s.session.read().await;
         let node = g.get_array(p).await.map_err(ic)?;
-        let nchunks: Vec<u32> = match &node.node_data {
-            icechunk::format::snapshot::NodeData::Array { shape, .. } => shape.num_chunks().collect(),
-            _ => Vec::new(),
-        };
-        let mut out = Vec::new();
-        let slab = slab_of(ranges, &nchunks)?;
-        prefetch_manifests(&g, p, &node, slab.as_deref()).await?;
-        match slab {
-            None => {
-                let mut st = g.all_node_chunks(&node).await.boxed();
-                while let Some(item) = st.next().await {
-                    let (_p, info) = item.map_err(ic)?;
-                    out.push((info.coord, info.payload));
-                }
-            }
-            Some(sl) => {
-                let mut idx: Vec<u32> = sl.iter().map(|r| r.0).collect();
-                if sl.iter().all(|r| r.0 < r.1) {
-                    'outer: loop {
-                        let c = ChunkIndices(idx.clone());
-                        if let Some(pl) = g.get_chunk_ref(p, &c).await.map_err(ic)? {
-                            out.push((c, pl));
-                        }
-                        let mut d = idx.len();
-                        loop {
-                            if d == 0 {
-                                break 'outer;
-                            }
-                            d -= 1;
-                            idx[d] += 1;
-                            if idx[d] < sl[d].1 {
-                                break;
-                            }
-                            idx[d] = sl[d].0;
-                        }
-                    }
-                }
-            }
-        }
-        Ok::<_, Error>((out, nchunks.len()))
+        let slab = slab_of(ranges, &node_nchunks(&node))?;
+        prefetch_manifests(&g, p, &node, slab.as_deref()).await.map_err(ic)?;
+        chunk_stream(&g, p, &node, slab).await.try_collect::<Vec<_>>().await.map_err(ic)
     })
-    .map(|(v, _)| v)
 }
 
 /// One array's chunks as columns: `dims` (list of integer vectors, one per
@@ -528,15 +534,142 @@ fn ic_refs_columns_(s: ExternalPtr<RSession>, array_path: &str, ranges: Robj) ->
     ))
 }
 
+/// Record batches of the refs view, produced lazily by a task on the
+/// runtime and pulled through a bounded channel: at most one batch waits
+/// ahead of the consumer.
+struct LazyRefs {
+    schema: arrow_schema::SchemaRef,
+    rx: futures::channel::mpsc::Receiver<std::result::Result<arrow_array::RecordBatch, arrow_schema::ArrowError>>,
+}
+
+impl Iterator for LazyRefs {
+    type Item = std::result::Result<arrow_array::RecordBatch, arrow_schema::ArrowError>;
+    fn next(&mut self) -> Option<Self::Item> {
+        // not the tokio runtime: the consumer may call from any thread
+        futures::executor::block_on(self.rx.next())
+    }
+}
+
+impl arrow_array::RecordBatchReader for LazyRefs {
+    fn schema(&self) -> arrow_schema::SchemaRef {
+        self.schema.clone()
+    }
+}
+
+fn refs_schema(ndim: usize) -> arrow_schema::SchemaRef {
+    use arrow_schema::{DataType, Field, Schema};
+    let mut fields: Vec<Field> = (0..ndim).map(|d| Field::new(format!("dim_{d}"), DataType::Int32, false)).collect();
+    fields.push(Field::new("present", DataType::Int32, false));
+    fields.push(Field::new("path", DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)), true));
+    fields.push(Field::new("offset", DataType::Int64, true));
+    fields.push(Field::new("size", DataType::Int64, true));
+    fields.push(Field::new("info", DataType::Utf8, true));
+    fields.push(Field::new("data", DataType::Binary, true));
+    Arc::new(Schema::new(fields))
+}
+
+fn arrow_err(e: impl std::fmt::Display) -> arrow_schema::ArrowError {
+    arrow_schema::ArrowError::ExternalError(e.to_string().into())
+}
+
+async fn fetch_native(g: &Session, p: &Path, c: Option<ChunkIndices>) -> icechunk::session::SessionResult<Option<Bytes>> {
+    let Some(c) = c else { return Ok(None) };
+    match g.get_chunk_reader(p, &c, &ByteRange::ALL).await? {
+        Some(f) => f.await.map(Some),
+        None => Ok(None),
+    }
+}
+
+/// One record batch; native chunk bytes fetched `conc` at a time when
+/// `native_bytes`.
+async fn refs_batch(
+    g: &Session,
+    p: &Path,
+    part: Vec<(ChunkIndices, ChunkPayload)>,
+    schema: &arrow_schema::SchemaRef,
+    unresolve: &(dyn Fn(&str) -> String + Sync),
+    unres: &mut std::collections::HashMap<String, String>,
+    native_bytes: bool,
+    conc: usize,
+) -> std::result::Result<arrow_array::RecordBatch, arrow_schema::ArrowError> {
+    use arrow_array::builder::{BinaryBuilder, Int32Builder, Int64Builder, StringBuilder, StringDictionaryBuilder};
+    use arrow_array::types::Int32Type;
+    use arrow_array::ArrayRef;
+    let ndim = schema.fields().len() - 6;
+    let natives: Vec<Option<Bytes>> = if native_bytes && part.iter().any(|(_, pl)| matches!(pl, ChunkPayload::Ref(_))) {
+        let want: Vec<Option<ChunkIndices>> =
+            part.iter().map(|(c, pl)| matches!(pl, ChunkPayload::Ref(_)).then(|| c.clone())).collect();
+        futures::stream::iter(want.into_iter().map(|c| fetch_native(g, p, c)))
+        .buffered(conc.max(1))
+        .try_collect()
+        .await
+        .map_err(arrow_err)?
+    } else {
+        Vec::new()
+    };
+    let n = part.len();
+    let mut dimb: Vec<Int32Builder> = (0..ndim).map(|_| Int32Builder::with_capacity(n)).collect();
+    let mut present = Int32Builder::with_capacity(n);
+    let mut pathb = StringDictionaryBuilder::<Int32Type>::new();
+    let mut off = Int64Builder::with_capacity(n);
+    let mut size = Int64Builder::with_capacity(n);
+    let mut info = StringBuilder::new();
+    let mut data = BinaryBuilder::new();
+    for (i, (coord, payload)) in part.iter().enumerate() {
+        for d in 0..ndim {
+            dimb[d].append_value(coord.0.get(d).copied().unwrap_or(0) as i32);
+        }
+        present.append_value(1);
+        info.append_null();
+        match payload {
+            ChunkPayload::Virtual(v) => {
+                let u = v.location.url();
+                let q = unres.entry(u.to_string()).or_insert_with(|| unresolve(u));
+                pathb.append_value(q.as_str());
+                off.append_value(v.offset as i64);
+                size.append_value(v.length as i64);
+                data.append_null();
+            }
+            ChunkPayload::Inline(b) => {
+                pathb.append_null();
+                off.append_null();
+                size.append_null();
+                data.append_value(b.as_ref());
+            }
+            _ => {
+                pathb.append_null();
+                off.append_null();
+                size.append_null();
+                match natives.get(i).and_then(|x| x.as_ref()) {
+                    Some(b) => data.append_value(b.as_ref()),
+                    None => data.append_null(),
+                }
+            }
+        }
+    }
+    let mut cols: Vec<ArrayRef> = dimb.into_iter().map(|mut b| Arc::new(b.finish()) as ArrayRef).collect();
+    cols.push(Arc::new(present.finish()));
+    cols.push(Arc::new(pathb.finish()));
+    cols.push(Arc::new(off.finish()));
+    cols.push(Arc::new(size.finish()));
+    cols.push(Arc::new(info.finish()));
+    cols.push(Arc::new(data.finish()));
+    arrow_array::RecordBatch::try_new(schema.clone(), cols)
+}
+
 /// The byterefs refs view of one array as an Arrow C stream: columns
 /// dim_0..dim_{n-1} (int32), present (int32), path (dictionary<int32, utf8>:
 /// the location with the remap rules undone), offset and size (int64),
-/// info (utf8), data (binary, inline chunks), in record batches of
-/// `batch_rows`. `rules_prefix` / `rules_replacement` are the remap rules
-/// (a location starting with a replacement gets the prefix back; an
-/// unmatched file:// URL becomes a plain path). Native chunks have null
-/// path and data. Writes the stream into the ArrowArrayStream at
-/// `stream_addr` (from nanoarrow). Returns list(batches, native, rows).
+/// info (utf8), data (binary: inline chunks, and native chunks' bytes when
+/// `native_bytes`), in record batches of `batch_rows`. `rules_prefix` /
+/// `rules_replacement` are the remap rules (a location starting with a
+/// replacement gets the prefix back; an unmatched file:// URL becomes a
+/// plain path). Native chunks have null path.
+///
+/// Lazy: the stream reads a copy of the session as it is now, and batches
+/// are built as the consumer pulls them (one batch of read-ahead), so a
+/// large array never sits in memory whole. Writes the stream into the
+/// ArrowArrayStream at `stream_addr` (from nanoarrow). Returns list(ndim).
 /// @noRd
 #[extendr]
 fn ic_refs_arrow_(
@@ -546,112 +679,82 @@ fn ic_refs_arrow_(
     rules_prefix: Strings,
     rules_replacement: Strings,
     batch_rows: i32,
+    native_bytes: bool,
     stream_addr: &str,
 ) -> R<List> {
-    use arrow_array::builder::{BinaryBuilder, Int32Builder, Int64Builder, StringBuilder, StringDictionaryBuilder};
-    use arrow_array::types::Int32Type;
-    use arrow_array::{ArrayRef, RecordBatch, RecordBatchIterator};
-    use arrow_schema::{ArrowError, DataType, Field, Schema};
-    use std::sync::Arc as SArc;
-
     let p = path(array_path)?;
+    let addr: usize = stream_addr.trim().parse().map_err(|_| arg("bad stream address"))?;
+    if addr == 0 {
+        return Err(arg("null stream address"));
+    }
     let mut rules: Vec<(String, String)> = rules_replacement
         .iter()
         .zip(rules_prefix.iter())
         .map(|(r, q)| ((&*r).to_string(), (&*q).to_string()))
         .collect();
     rules.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
-    let unresolve = |u: &str| -> String {
-        for (rep, pre) in &rules {
-            if let Some(rest) = u.strip_prefix(rep.as_str()) {
-                return format!("{pre}{rest}");
-            }
-        }
-        match u.strip_prefix("file://") {
-            Some(rest) if rest.starts_with('/') => rest.to_string(),
-            _ => u.to_string(),
-        }
-    };
-    // node dimensionality, also when the slab is empty
-    let ndim = block_on(async {
+    // validate the path and slab now, so errors surface here, not mid-stream
+    let (g, slab, ndim) = block_on(async {
         let g = s.session.read().await;
         let node = g.get_array(&p).await.map_err(ic)?;
-        Ok::<usize, Error>(match &node.node_data {
-            icechunk::format::snapshot::NodeData::Array { shape, .. } => shape.len(),
-            _ => 0,
-        })
+        let nchunks = node_nchunks(&node);
+        let slab = slab_of(&ranges, &nchunks)?;
+        Ok::<_, Error>((g.clone(), slab, nchunks.len()))
     })?;
-    let chunks = collect_chunks(&s, &p, &ranges)?;
-    let mut fields: Vec<Field> = (0..ndim).map(|d| Field::new(format!("dim_{d}"), DataType::Int32, false)).collect();
-    fields.push(Field::new("present", DataType::Int32, false));
-    fields.push(Field::new("path", DataType::Dictionary(Box::new(DataType::Int32), Box::new(DataType::Utf8)), true));
-    fields.push(Field::new("offset", DataType::Int64, true));
-    fields.push(Field::new("size", DataType::Int64, true));
-    fields.push(Field::new("info", DataType::Utf8, true));
-    fields.push(Field::new("data", DataType::Binary, true));
-    let schema = SArc::new(Schema::new(fields));
+    let schema = refs_schema(ndim);
     let bs = if batch_rows > 0 { batch_rows as usize } else { 1 << 20 };
-    let mut unres: std::collections::HashMap<String, String> = std::collections::HashMap::new();
-    let mut batches: Vec<std::result::Result<RecordBatch, ArrowError>> = Vec::new();
-    let mut native_rows: i32 = 0;
-    for part in chunks.chunks(bs.max(1)) {
-        let mut dimb: Vec<Int32Builder> = (0..ndim).map(|_| Int32Builder::with_capacity(part.len())).collect();
-        let mut present = Int32Builder::with_capacity(part.len());
-        let mut pathb = StringDictionaryBuilder::<Int32Type>::new();
-        let mut off = Int64Builder::with_capacity(part.len());
-        let mut size = Int64Builder::with_capacity(part.len());
-        let mut info = StringBuilder::new();
-        let mut data = BinaryBuilder::new();
-        for (coord, payload) in part {
-            for d in 0..ndim {
-                dimb[d].append_value(coord.0.get(d).copied().unwrap_or(0) as i32);
+    let conc = MANIFEST_CONCURRENCY.load(std::sync::atomic::Ordering::Relaxed);
+    let (mut tx, rx) = futures::channel::mpsc::channel(0);
+    let sch = schema.clone();
+    crate::runtime::rt().spawn(async move {
+        let unresolve = move |u: &str| -> String {
+            for (rep, pre) in &rules {
+                if let Some(rest) = u.strip_prefix(rep.as_str()) {
+                    return format!("{pre}{rest}");
+                }
             }
-            present.append_value(1);
-            info.append_null();
-            match payload {
-                ChunkPayload::Virtual(v) => {
-                    let u = v.location.url();
-                    let q = unres.entry(u.to_string()).or_insert_with(|| unresolve(u));
-                    pathb.append_value(q.as_str());
-                    off.append_value(v.offset as i64);
-                    size.append_value(v.length as i64);
-                    data.append_null();
+            match u.strip_prefix("file://") {
+                Some(rest) if rest.starts_with('/') => rest.to_string(),
+                _ => u.to_string(),
+            }
+        };
+        let res: std::result::Result<(), arrow_schema::ArrowError> = async {
+            use futures::SinkExt;
+            let node = g.get_array(&p).await.map_err(arrow_err)?;
+            prefetch_manifests(&g, &p, &node, slab.as_deref()).await.map_err(arrow_err)?;
+            let mut st = chunk_stream(&g, &p, &node, slab).await;
+            let mut unres = std::collections::HashMap::new();
+            let mut buf = Vec::with_capacity(bs.min(1 << 16));
+            loop {
+                let item = st.next().await;
+                let done = item.is_none();
+                if let Some(r) = item {
+                    buf.push(r.map_err(arrow_err)?);
                 }
-                ChunkPayload::Inline(b) => {
-                    pathb.append_null();
-                    off.append_null();
-                    size.append_null();
-                    data.append_value(b.as_ref());
+                if buf.len() >= bs || (done && !buf.is_empty()) {
+                    let part = std::mem::take(&mut buf);
+                    let b = refs_batch(&g, &p, part, &sch, &unresolve, &mut unres, native_bytes, conc).await?;
+                    if tx.send(Ok(b)).await.is_err() {
+                        return Ok(()); // consumer released the stream
+                    }
                 }
-                _ => {
-                    native_rows += 1;
-                    pathb.append_null();
-                    off.append_null();
-                    size.append_null();
-                    data.append_null();
+                if done {
+                    return Ok(());
                 }
             }
         }
-        let mut cols: Vec<ArrayRef> = dimb.into_iter().map(|mut b| SArc::new(b.finish()) as ArrayRef).collect();
-        cols.push(SArc::new(present.finish()));
-        cols.push(SArc::new(pathb.finish()));
-        cols.push(SArc::new(off.finish()));
-        cols.push(SArc::new(size.finish()));
-        cols.push(SArc::new(info.finish()));
-        cols.push(SArc::new(data.finish()));
-        batches.push(RecordBatch::try_new(schema.clone(), cols));
-    }
-    let nb = batches.len() as i32;
-    let reader = RecordBatchIterator::new(batches.into_iter(), schema);
-    let addr: usize = stream_addr.trim().parse().map_err(|_| arg("bad stream address"))?;
-    if addr == 0 {
-        return Err(arg("null stream address"));
-    }
+        .await;
+        if let Err(e) = res {
+            use futures::SinkExt;
+            let _ = tx.send(Err(e)).await;
+        }
+    });
+    let reader = LazyRefs { schema, rx };
     let ffi = arrow_array::ffi_stream::FFI_ArrowArrayStream::new(Box::new(reader));
     // SAFETY: addr is a freshly allocated, empty ArrowArrayStream owned by
     // the caller (nanoarrow_allocate_array_stream()); we move ours into it.
     unsafe { std::ptr::write(addr as *mut arrow_array::ffi_stream::FFI_ArrowArrayStream, ffi) };
-    Ok(list!(batches = nb, native = native_rows, rows = chunks.len() as i32))
+    Ok(list!(ndim = ndim as i32))
 }
 
 // ---- chunk reference table ------------------------------------------------
@@ -727,7 +830,7 @@ fn ic_chunk_refs_(s: ExternalPtr<RSession>, array_path: &str, include_inline: bo
             for n in nodes {
                 let n = n.map_err(ic)?;
                 if matches!(n.node_data, icechunk::format::snapshot::NodeData::Array { .. }) {
-                    prefetch_manifests(&g, &n.path, &n, None).await?;
+                    prefetch_manifests(&g, &n.path, &n, None).await.map_err(ic)?;
                 }
             }
             let mut st = g.all_chunks().await.map_err(ic)?.boxed();
@@ -738,7 +841,7 @@ fn ic_chunk_refs_(s: ExternalPtr<RSession>, array_path: &str, include_inline: bo
         } else {
             let ap = path(array_path)?;
             let node = g.get_array(&ap).await.map_err(ic)?;
-            prefetch_manifests(&g, &ap, &node, None).await?;
+            prefetch_manifests(&g, &ap, &node, None).await.map_err(ic)?;
             let mut st = g.all_node_chunks(&node).await.boxed();
             while let Some(item) = st.next().await {
                 let (p, info) = item.map_err(ic)?;

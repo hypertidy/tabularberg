@@ -110,3 +110,6 @@ ic_pizzarr_store <- function(session) {
   )
   .pz_env$cls
 }
+
+# R6 method bodies refer to these; R CMD check cannot see R6 binds them
+utils::globalVariables(c("self", "private", "super"))
