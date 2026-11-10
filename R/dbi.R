@@ -33,14 +33,7 @@ NULL
 #' discards. Without `dbBegin()` each append commits on its own.
 #'
 #' @return `Icechunk()`: an `IcechunkDriver`.
-#' @examples
-#' \dontrun{
-#' con <- DBI::dbConnect(Icechunk(), "path/to/repo")
-#' DBI::dbListTables(con)
-#' DBI::dbGetQuery(con, "SELECT path, count(*) AS n, sum(size) AS bytes
-#'                       FROM refs_sst GROUP BY path")
-#' old <- DBI::dbConnect(Icechunk(), "path/to/repo", snapshot = "QJ0TJMNQT5Q5MY5395J0")
-#' }
+#' @example inst/examples/Icechunk.R
 #' @export
 Icechunk <- function() new("IcechunkDriver")
 

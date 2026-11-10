@@ -26,3 +26,8 @@ holds the URL prefixes, suitable for \code{authorize}.
 One container per scheme and host (http/https), bucket (s3, gcs), or
 directory (file), as the locations resolve under \code{target}.
 }
+\examples{
+ex <- ic_example_repo()
+br <- ic_to_byterefs(ic_session_readonly(ic_repo_open(ex$path, authorize = ex$authorize), branch = "main"))
+ic_byterefs_containers(br)
+}

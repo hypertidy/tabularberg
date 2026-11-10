@@ -20,6 +20,7 @@
 #' @param account,container Azure account and container.
 #' @return an `icechunk_storage` object.
 #' @name ic_storage
+#' @example inst/examples/ic_storage.R
 #' @export
 ic_storage_local <- function(path) {
   path <- normalizePath(path.expand(path), mustWork = FALSE)

@@ -19,3 +19,8 @@ needs every manifest that covers it. With split manifests on remote
 storage, fetching them one after another dominates; icechunkr first
 loads them into the session's cache this many at a time.
 }
+\examples{
+old <- ic_manifest_concurrency(8L)
+old
+ic_manifest_concurrency(old)
+}

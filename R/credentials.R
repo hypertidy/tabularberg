@@ -11,6 +11,7 @@
 #' @param access_key_id,secret_access_key,session_token static S3 keys.
 #' @return a credential spec (a list), for `authorize` in [ic_repo_open()].
 #' @name ic_credentials
+#' @example inst/examples/ic_credentials.R
 #' @export
 ic_cred_s3 <- function(kind = c("from_env", "anonymous", "static"),
                        access_key_id = NULL, secret_access_key = NULL,

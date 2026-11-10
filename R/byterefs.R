@@ -21,6 +21,7 @@
 #'   `refs(array)`, a function returning that array's global refs rows
 #'   (`dim_0..`, `present`, `path`, `offset`, `size`, `info`, `data`) joined
 #'   to the source's `etag`, `mtime` and `source_size`.
+#' @example inst/examples/ic_byterefs_read.R
 #' @export
 ic_byterefs_read <- function(x) {
   if (inherits(x, "byterefs")) return(x)
@@ -375,6 +376,7 @@ print.byterefs <- function(x, ...) {
 #' @param region S3 region for s3 containers.
 #' @return a list of [ic_container()] objects; the `prefixes` attribute
 #'   holds the URL prefixes, suitable for `authorize`.
+#' @example inst/examples/ic_byterefs_containers.R
 #' @export
 ic_byterefs_containers <- function(br, target = NULL, region = Sys.getenv("AWS_REGION", "us-east-1")) {
   opened <- !inherits(br, "byterefs")
@@ -463,6 +465,7 @@ ic_byterefs_containers <- function(br, target = NULL, region = Sys.getenv("AWS_R
 #' @param validate check every location falls within a declared container.
 #' @return a data frame, one row per array: `array`, `refs` (virtual),
 #'   `native` (inline or coordinate chunks), `absent`.
+#' @example inst/examples/ic_write_byterefs.R
 #' @export
 ic_write_byterefs <- function(session, br, target = NULL, checksums = TRUE, validate = TRUE) {
   opened <- !inherits(br, "byterefs")
@@ -574,6 +577,7 @@ ic_write_byterefs <- function(session, br, target = NULL, checksums = TRUE, vali
 #' @param ... passed to [ic_write_byterefs()].
 #' @return the `icechunk_repo` (invisibly), with attributes `snapshot`
 #'   and `summary`.
+#' @example inst/examples/ic_repo_from_byterefs.R
 #' @export
 ic_repo_from_byterefs <- function(br, storage, target = NULL, message = NULL, authorize = NULL,
                                   manifest_split = NULL, ...) {
@@ -716,6 +720,7 @@ ic_repo_from_byterefs <- function(br, storage, target = NULL, message = NULL, au
 #' @param native fetch native chunk bytes into `data` (else those rows have
 #'   `present = 1` and no location; a byterefs reader cannot use them).
 #' @return a `byterefs` object (invisibly if `dsn` is given).
+#' @example inst/examples/ic_to_byterefs.R
 #' @export
 ic_to_byterefs <- function(session, dsn = NULL, native = TRUE) {
   root <- .br_root(session)
@@ -860,6 +865,7 @@ blob_list <- function(x, check = TRUE) {
 #' @param x,y byterefs stores (see [ic_byterefs_read()]).
 #' @param target remap target used to resolve paths on both sides.
 #' @return a data frame of checks: `array`, `check`, `ok`, `detail`.
+#' @example inst/examples/ic_byterefs_compare.R
 #' @export
 ic_byterefs_compare <- function(x, y, target = NULL) {
   ox <- !inherits(x, "byterefs"); oy <- !inherits(y, "byterefs")
@@ -947,6 +953,7 @@ ic_byterefs_compare <- function(x, y, target = NULL) {
 #' @param native fetch native chunks' bytes into `data` (concurrently, see
 #'   [ic_manifest_concurrency()]); `FALSE` leaves them null.
 #' @return a `nanoarrow_array_stream`.
+#' @example inst/examples/ic_refs_arrow.R
 #' @export
 ic_refs_arrow <- function(session, path, chunks = NULL, batch_rows = 65536L, native = TRUE) {
   .need("nanoarrow")

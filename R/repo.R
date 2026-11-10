@@ -23,6 +23,7 @@
 #'   [ic_to_byterefs()], the DBI `refs_<array>` tables) fetch only the
 #'   manifests that cover it. Persist with [ic_repo_save_config()].
 #' @return an `icechunk_repo`.
+#' @example inst/examples/ic_repo_open.R
 #' @export
 ic_repo_open <- function(storage, containers = NULL, authorize = NULL) {
   storage <- .as_storage(storage)
@@ -84,6 +85,7 @@ print.icechunk_repo <- function(x, ...) {
 #' @param snapshot_id a snapshot id.
 #' @return data frames for listings; snapshot ids as character.
 #' @name ic_refs
+#' @example inst/examples/ic_refs.R
 #' @export
 ic_branches <- function(repo) .df(.ic(ic_branches_(repo$ptr)))
 
@@ -130,9 +132,16 @@ ic_lookup <- function(repo, branch = "main", tag = NULL) .ic(ic_lookup_(repo$ptr
 #'   reset fails if the branch has moved); for `ic_diff()`: the starting
 #'   version, as for `to`.
 #' @param to for `ic_diff()`: a list like `list(branch = "main")`,
-#'   `list(tag = "v1")` or `list(snapshot = id)`.
+#'   `list(tag = "v1")` or `list(snapshot = id)`, or a snapshot id.
 #' @export
 ic_diff <- function(repo, from, to) {
+  ver <- function(x) {
+    if (is.character(x) && length(x) == 1L && is.null(names(x))) return(list(snapshot = x))
+    if (!is.list(x) || !any(c("branch", "tag", "snapshot") %in% names(x)))
+      stop("from and to are list(branch = ), list(tag = ), list(snapshot = ) or a snapshot id", call. = FALSE)
+    x
+  }
+  from <- ver(from); to <- ver(to)
   g <- function(x, k) .chr(x[[k]])
   .diff(.ic(ic_diff_(repo$ptr, g(from, "branch"), g(from, "tag"), g(from, "snapshot"),
                      g(to, "branch"), g(to, "tag"), g(to, "snapshot"))))
@@ -177,6 +186,7 @@ print.icechunk_diff <- function(x, ...) {
 #' @param repo an `icechunk_repo`.
 #' @return a data frame: `prefix` (URL prefix of each declared container) and
 #'   `authorized` (whether this repository object may read from it).
+#' @example inst/examples/ic_repo_containers.R
 #' @export
 ic_repo_containers <- function(repo) {
   x <- ic_repo_containers_(repo$ptr)

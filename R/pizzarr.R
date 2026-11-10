@@ -23,13 +23,7 @@
 #'
 #' @param session an `icechunk_session` (read-only, or writable to write).
 #' @return an R6 object inheriting `pizzarr::Store`.
-#' @examples
-#' \dontrun{
-#' s <- ic_session_writable(ic_repo_open("path/to/repo"), "main")
-#' st <- ic_pizzarr_store(s)
-#' z <- pizzarr::zarr_open(st, mode = "r", path = "sst")
-#' z$get_item("...")
-#' }
+#' @example inst/examples/ic_pizzarr_store.R
 #' @export
 ic_pizzarr_store <- function(session) {
   .need("pizzarr"); .need("R6")

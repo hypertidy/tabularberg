@@ -48,11 +48,24 @@ reset fails if the branch has moved); for \code{ic_diff()}: the starting
 version, as for \code{to}.}
 
 \item{to}{for \code{ic_diff()}: a list like \code{list(branch = "main")},
-\code{list(tag = "v1")} or \code{list(snapshot = id)}.}
+\code{list(tag = "v1")} or \code{list(snapshot = id)}, or a snapshot id.}
 }
 \value{
 data frames for listings; snapshot ids as character.
 }
 \description{
 Branches, tags, ancestry and diffs
+}
+\examples{
+ex <- ic_example_repo()
+repo <- ic_repo_open(ex$path, authorize = ex$authorize)
+ic_branches(repo)
+ic_tags(repo)
+ic_ancestry(repo, branch = "main")[, c("snapshot_id", "message")]
+
+# a branch from the tagged snapshot, and what changed since
+v1 <- ic_lookup(repo, tag = "v1")
+ic_branch_create(repo, "dev", v1)
+ic_diff(repo, from = list(tag = "v1"), to = list(branch = "main"))
+ic_branch_delete(repo, "dev")
 }

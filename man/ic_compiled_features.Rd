@@ -16,3 +16,7 @@ ic_icechunk_version()
 \description{
 Build information
 }
+\examples{
+ic_compiled_features()
+ic_icechunk_version()
+}

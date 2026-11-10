@@ -7,6 +7,7 @@
 #' @param repo an `icechunk_repo`.
 #' @param branch,tag,snapshot select one version (default branch "main").
 #' @return an `icechunk_session`.
+#' @example inst/examples/ic_session_readonly.R
 #' @export
 ic_session_readonly <- function(repo, branch = NULL, tag = NULL, snapshot = NULL) {
   .session(.ic(ic_session_readonly_(repo$ptr, .chr(branch), .chr(tag), .chr(snapshot))))
@@ -50,6 +51,7 @@ print.icechunk_session <- function(x, ...) {
 #' @return `ic_get()` a raw vector or `NULL` if absent (an absent chunk
 #'   means fill value); `ic_get_many()` a list of those.
 #' @name ic_store
+#' @example inst/examples/ic_store.R
 #' @export
 ic_get <- function(session, key, offset = NULL, length = NULL) {
   off <- if (is.null(offset)) -1 else as.double(offset)
@@ -98,6 +100,7 @@ ic_list <- function(session, prefix = "", recursive = TRUE) {
 #' @param inline include inline chunk bytes as a list column.
 #' @return a data frame: path, coord (comma-separated 0-based chunk index),
 #'   key, kind, location, offset, length, etag, last_modified (and inline).
+#' @example inst/examples/ic_chunk_refs.R
 #' @export
 ic_chunk_refs <- function(session, path = NULL, inline = FALSE) {
   x <- .ic(ic_chunk_refs_(session$ptr, .chr(path), inline))
@@ -129,6 +132,7 @@ ic_virtual_locations <- function(session) sort(.ic(ic_virtual_locations_(session
 #' @param etag,last_modified optional checksum: reads fail if the object
 #'   has changed.
 #' @param validate check the location falls within a declared container.
+#' @example inst/examples/ic_set_virtual_ref.R
 #' @export
 ic_set_virtual_ref <- function(session, key, location, offset, length,
                                etag = NULL, last_modified = NULL, validate = TRUE) {
@@ -182,6 +186,7 @@ ic_set_virtual_refs <- function(session, path, refs, validate = TRUE) {
 #' @return new snapshot id (commit/amend/flush).
 #' @details A commit that loses a race raises a condition of class
 #'   `icechunk_conflict`; call `ic_rebase()` and commit again.
+#' @example inst/examples/ic_commit.R
 #' @export
 ic_commit <- function(session, message, metadata = NULL, allow_empty = FALSE) {
   .ic(ic_commit_(session$ptr, message, .meta(metadata), "commit", allow_empty))
@@ -241,6 +246,7 @@ ic_status <- function(session) .diff(.ic(ic_status_(session$ptr)))
 #' @param session an `icechunk_session`.
 #' @param bytes a raw vector from `ic_session_bytes()`.
 #' @return raw vector; a session; or nothing.
+#' @example inst/examples/ic_session_bytes.R
 #' @export
 ic_session_bytes <- function(session) {
   structure(.ic(ic_session_bytes_(session$ptr)), class = "icechunk_session_bytes")
@@ -269,6 +275,7 @@ print.icechunk_session_bytes <- function(x, ...) {
 #' Build information
 #' @return `ic_compiled_features()` the Cargo features in this build;
 #'   `ic_icechunk_version()` the icechunk crate version.
+#' @example inst/examples/ic_compiled_features.R
 #' @export
 ic_compiled_features <- function() ic_compiled_features_()
 
@@ -286,5 +293,6 @@ ic_icechunk_version <- function() ic_icechunk_version_()
 #'
 #' @param n manifests fetched at once (1 = sequential).
 #' @return the previous value (invisibly).
+#' @example inst/examples/ic_manifest_concurrency.R
 #' @export
 ic_manifest_concurrency <- function(n = 32L) invisible(ic_set_manifest_concurrency_(as.integer(n)))
