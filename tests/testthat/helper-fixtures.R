@@ -1,6 +1,6 @@
 fixture_root <- function() {
   p <- Sys.getenv("ICECHUNK_R_FIXTURES", "")
-  if (!nzchar(p)) p <- normalizePath(file.path(testthat::test_path(), "..", "..", "..", "fixtures"), mustWork = FALSE)
+  if (!nzchar(p)) p <- normalizePath(file.path(testthat::test_path(), "..", "..", "fixtures"), mustWork = FALSE)
   p
 }
 skip_if_no_fixtures <- function() {

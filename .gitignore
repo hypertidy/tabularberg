@@ -3,3 +3,10 @@ src/Makevars
 *.o
 *.so
 docs/
+.Rproj.user
+.Rhistory
+*.Rproj
+fixtures/.venv-*/
+fixtures/repos/
+fixtures/expected/
+fixtures/manifest.json

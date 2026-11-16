@@ -11,3 +11,7 @@
 ^_pkgdown\.yml$
 ^docs$
 ^pkgdown$
+^\.github$
+^fixtures$
+^\.Rhistory$
+^LICENSE\.md$

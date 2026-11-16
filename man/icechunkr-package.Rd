@@ -11,8 +11,9 @@ Bindings to the 'Icechunk' Rust library: storage, repositories, branches, tags, 
 \seealso{
 Useful links:
 \itemize{
-  \item \url{https://github.com/hypertidy/icechunk-r}
-  \item Report bugs at \url{https://github.com/hypertidy/icechunk-r/issues}
+  \item \url{https://github.com/hypertidy/icechunkr}
+  \item \url{https://hypertidy.github.io/icechunkr/}
+  \item Report bugs at \url{https://github.com/hypertidy/icechunkr/issues}
 }
 
 }

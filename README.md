@@ -5,7 +5,7 @@
 
 R access to [Icechunk](https://icechunk.io) repositories: transactional,
 versioned Zarr v3 stores. icechunkr binds the Rust `icechunk` crate
-(2.3.1) through [extendr](https://extendr.github.io), and offers two ways
+(2.3.1) through [extendr](https://extendr.rs/), and offers two ways
 in:
 
 - **Icechunk itself:** repositories, branches, tags and history;
@@ -31,7 +31,7 @@ crate's minimum).
 
 ```r
 # install.packages("pak")
-pak::pak("mdsumner/icechunk-r/icechunkr")
+pak::pak("hypertidy/icechunkr")
 ```
 
 Storage backends are chosen at build time with `ICECHUNK_FEATURES`:
