@@ -65,3 +65,18 @@ test_that("file:// prefixes and locations with doubled slashes still match", {
   r <- ic_session_readonly(ic_repo_open(rp, authorize = pre), branch = "main")
   expect_identical(ic_get(r, "a/c/0"), as.raw(1:8))
 })
+
+test_that("Windows paths become file:///D:/ URLs, and back", {
+  # Icechunk stores file://D:/x as file:///D:/x (and "\" as "/") but matches
+  # containers by string prefix, so both sides must be spelled that way
+  expect_identical(.file_url(c("file://D:/a/src/", "file:///D:/a/b.bin", "file://D:\\a\\b\\x.bin", "s3://b/k", NA)),
+                   c("file:///D:/a/src/", "file:///D:/a/b.bin", "file:///D:/a/b/x.bin", "s3://b/k", NA))
+  expect_identical(.path_file_url(c("D:/a/b/", "C:\\Users\\me\\T\\", "/home/me/")),
+                   c("file:///D:/a/b/", "file:///C:/Users/me/T/", "file:///home/me/"))
+  none <- data.frame(prefix = character(), replacement = character())
+  expect_identical(.br_resolve(c("D:/a/x.bin", "C:\\u\\y.bin", "/home/me/z.bin", "https://h/p"), none),
+                   c("file:///D:/a/x.bin", "file:///C:/u/y.bin", "file:///home/me/z.bin", "https://h/p"))
+  expect_identical(.br_unresolve(c("file:///D:/a/x.bin", "file:///home/me/my%20data/z.bin", "s3://b/k"), none),
+                   c("D:/a/x.bin", "/home/me/my data/z.bin", "s3://b/k"))
+  expect_identical(.br_container_prefix("file:///D:/a/x.bin"), "file:///D:/a/")
+})

@@ -51,14 +51,29 @@ print.icechunk_cred <- function(x, ...) {
   invisible(x)
 }
 
-# Icechunk matches file:// locations and container prefixes only when the
-# path has no repeated slashes. macOS temporary paths carry them (TMPDIR ends
-# in "/", so tempdir() gives ".../T//Rtmp..."), so collapse them on the way in.
+# Icechunk stores a file:// location in WHATWG-normalized form but matches it
+# to a container by plain string prefix, so prefixes and locations must both
+# be spelled the normalized way or every ref is rejected. On the way in:
+# - backslashes become "/" (Windows paths)
+# - repeated slashes collapse (macOS: TMPDIR ends in "/", so tempdir() gives
+#   ".../T//Rtmp...")
+# - a drive letter gets its third slash: file://D:/x -> file:///D:/x
+# Characters the parser percent-encodes (a space, as in "C:/Users/First
+# Last") are deliberately NOT encoded: icechunk 2.3.1 matches the encoded
+# location when a ref is written but the decoded one when it is read, so no
+# spelling of such a prefix works both ways. Unencoded, the refs are rejected
+# at write time, which beats committing a repository that cannot be read.
 .file_url <- function(x) {
   f <- !is.na(x) & startsWith(x, "file://")
-  x[f] <- paste0("file://", gsub("/{2,}", "/", substring(x[f], 8L)))
+  p <- gsub("\\", "/", substring(x[f], 8L), fixed = TRUE)
+  p <- gsub("/{2,}", "/", p)
+  p <- sub("^([A-Za-z]:)", "/\\1", p)
+  x[f] <- paste0("file://", p)
   x
 }
+
+# a local path as a file:// URL, in the form .file_url() gives
+.path_file_url <- function(path) .file_url(paste0("file://", path))
 
 #' @param url_prefix the prefix chunk locations must start with, e.g.
 #'   `"s3://bucket/path/"`, `"https://host/path/"`, `"file:///data/"`.

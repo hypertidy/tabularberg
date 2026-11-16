@@ -341,8 +341,8 @@ print.byterefs <- function(x, ...) {
   }
   bad <- !is.na(out) & startsWith(out, "/vsi")
   if (any(bad)) stop(out[bad][1], ": still a GDAL /vsi path after remap; choose a target that gives a URL", call. = FALSE)
-  loc <- !is.na(out) & startsWith(out, "/")
-  out[loc] <- paste0("file://", out[loc])
+  loc <- !is.na(out) & (startsWith(out, "/") | grepl("^[A-Za-z]:[/\\\\]", out))
+  out[loc] <- .path_file_url(out[loc])
   .file_url(out)
 }
 
@@ -355,8 +355,9 @@ print.byterefs <- function(x, ...) {
     out[hit] <- paste0(rules$prefix[i], substring(out[hit], nchar(rules$replacement[i]) + 1L))
     done <- done | hit
   }
+  # back to a local path: file:///D:/x -> D:/x, and undo .file_url()'s encoding
   f <- !done & !is.na(out) & startsWith(out, "file:///")
-  out[f] <- substring(out[f], 8L)
+  out[f] <- vapply(sub("^/([A-Za-z]:)", "\\1", substring(out[f], 8L)), utils::URLdecode, "", USE.NAMES = FALSE)
   out
 }
 
@@ -365,7 +366,7 @@ print.byterefs <- function(x, ...) {
   switch(scheme,
     http = , https = sub("^(https?://[^/]+/).*$", "\\1", url),
     s3 = , gs = , gcs = sub("^([a-z0-9]+://[^/]+/).*$", "\\1", url),
-    file = paste0(dirname(.file_url(url)), "/"),
+    file = sub("[^/]*$", "", .file_url(url)),
     stop(url, ": no virtual chunk container for scheme '", scheme, "'", call. = FALSE))
 }
 

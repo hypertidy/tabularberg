@@ -36,7 +36,7 @@ ic_example_repo <- function(path = tempfile("icechunk-example-")) {
   writeBin(bytes, file.path(src, "grid.bin"))
   writeBin(c(as.raw(rep(0x20, 2048)), bytes), file.path(src, "grid.nc"))
   src <- normalizePath(src, winslash = "/")
-  prefix <- paste0("file://", src, "/")
+  prefix <- .path_file_url(paste0(src, "/"))
   rp <- file.path(normalizePath(path, winslash = "/"), "repo")
   repo <- ic_repo_create(rp, containers = ic_container(prefix, "local", path = src), authorize = prefix)
   ic_repo_save_config(repo)
@@ -51,10 +51,11 @@ ic_example_repo <- function(path = tempfile("icechunk-example-")) {
     paste(shape, collapse = ","), dtype, paste(chunks, collapse = ","), fill))
   ic_set(s, "from_bin/zarr.json", meta(c(64, 48), c(16, 48), "float32", '"NaN"'))
   ic_set(s, "from_nc/zarr.json", meta(c(64, 48), c(64, 48), "float32", '"NaN"'))
-  ic_set_virtual_refs(s, "/from_bin", data.frame(
-    dim_0 = 0:3, dim_1 = 0L, location = paste0(prefix, "grid.bin"), offset = (0:3) * 3072, length = 3072))
-  ic_set_virtual_refs(s, "/from_nc", data.frame(
-    dim_0 = 0L, dim_1 = 0L, location = paste0(prefix, "grid.nc"), offset = 2048, length = 12288))
+  nfail <- ic_set_virtual_refs(s, "/from_bin", data.frame(
+    dim_0 = 0:3, dim_1 = 0L, location = paste0(prefix, "grid.bin"), offset = (0:3) * 3072, length = 3072)) +
+    ic_set_virtual_refs(s, "/from_nc", data.frame(
+      dim_0 = 0L, dim_1 = 0L, location = paste0(prefix, "grid.nc"), offset = 2048, length = 12288))
+  if (nfail) stop(nfail, " example refs rejected under ", prefix, call. = FALSE)
   v1 <- ic_commit(s, "two arrays of virtual references")
   ic_tag_create(repo, "v1", v1)
   s <- ic_session_writable(repo, "main")
