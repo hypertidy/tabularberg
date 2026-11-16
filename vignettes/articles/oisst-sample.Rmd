@@ -1,0 +1,236 @@
+---
+title: "One dataset, two kinds of reference"
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>")
+# chunks that fetch from NOAA run only when it is reachable
+online <- requireNamespace("curl", quietly = TRUE) &&
+  !is.null(curl::nslookup("www.ncei.noaa.gov", error = FALSE))
+```
+
+A virtual Icechunk repository keeps its metadata and coordinates itself
+and points at the data where it already lives. Who can read what is
+therefore decided in several places, at different times. This article
+walks through them with a small real example: ten days of NOAA OISST v2.1
+daily sea surface temperature (September 1981), from
+[zarr-icechunk-assure](https://github.com/mdsumner/zarr-icechunk-assure).
+The package ships the same repository built twice, once with references
+into NOAA's `https://` archive and once into its `s3://` bucket.
+
+```{r}
+library(tabularberg)
+https <- ic_example_oisst("https")
+s3 <- ic_example_oisst("s3")
+repo <- ic_repo_open(https$path)
+repo
+```
+
+## What needs no credentials
+
+Metadata, coordinates and history live in the repository, so they read
+without authorising anything.
+
+```{r}
+ic_tags(repo)
+ic_ancestry(repo, tag = "cf-repaired")[, c("snapshot_id", "message")]
+```
+
+The `as-virtualized` tag is the repository as first built, with a defect
+kept on purpose: the `time` array has no `units` attribute. `cf-repaired`
+adds them in a second commit. That commit touched metadata only; no
+reference was rewritten.
+
+```{r}
+ic_diff(repo, from = list(tag = "as-virtualized"), to = list(tag = "cf-repaired"))
+units <- function(tag) {
+  meta <- ic_get(ic_session_readonly(repo, tag = tag), "time/zarr.json")
+  jsonlite::fromJSON(rawToChar(meta))$attributes$units
+}
+units("as-virtualized")
+units("cf-repaired")
+```
+
+## Where the bytes are
+
+Each data chunk is a reference: a location, an offset and a length. The two
+repositories hold the same byte ranges of the same files, named two ways.
+
+```{r}
+refs <- function(x) {
+  s <- ic_session_readonly(ic_repo_open(x$path), tag = "cf-repaired")
+  ic_chunk_refs(s, "/sst")[, c("key", "location", "offset", "length")]
+}
+r1 <- refs(https)
+r2 <- refs(s3)
+identical(r1[c("key", "offset", "length")], r2[c("key", "offset", "length")])
+substr(c(r1$location[1], r2$location[1]), 1, 75)
+```
+
+Every reference falls under a *virtual chunk container*, a URL prefix the
+repository declares along with how to reach it. A container is read only
+once it is authorised, so an unauthorised read is refused before anything
+is fetched:
+
+```{r}
+ic_repo_containers(repo)
+s <- ic_session_readonly(repo, tag = "cf-repaired")
+tryCatch(ic_get(s, "sst/c/0/0/0/0"), error = function(e) strwrap(conditionMessage(e), 75))
+```
+
+## Authorise and read
+
+`ic_example_oisst()` returns the container prefix with a credential that
+suits it: plain HTTP for the archive, anonymous access for the public
+bucket. tabularberg returns chunk bytes; decoding them belongs to a Zarr
+reader. These chunks are simple enough to decode in base R: zlib, then
+undo a byte shuffle, then little-endian 16-bit integers.
+
+```{r, eval = online}
+chunk <- function(x) {
+  s <- ic_session_readonly(ic_repo_open(x$path, authorize = x$authorize), tag = "cf-repaired")
+  ic_get(s, "sst/c/0/0/0/0")
+}
+b1 <- chunk(https)
+b2 <- chunk(s3)
+identical(b1, b2)
+
+unshuffle <- function(b, size) as.vector(t(matrix(b, nrow = length(b) %/% size, ncol = size)))
+decode <- function(raw) {
+  readBin(unshuffle(memDecompress(raw, "gzip"), 2L), "integer",
+          n = 1440 * 720, size = 2, endian = "little")
+}
+p <- https$probe$probe
+sst <- decode(b1)
+sst[p$iy_stored * 1440 + p$ix + 1] * https$probe$array$scale_factor
+```
+
+That is 27.82 degrees C at longitude 199.875, latitude -9.875 on 1
+September 1981, the probe value in the sample's `probe.json`.
+
+## When each choice is made
+
+zarr-icechunk-assure frames the choices by when they bind and whether they
+can be undone:
+
+- **Bake time: the reference flavour.** `https://...` or `s3://...` is
+  written into every reference. Changing it means rewriting the references
+  (for byterefs stores, `ic_byterefs_containers()` with a `target` remaps
+  them as a repository is built). That is why the sample ships two
+  repositories rather than one.
+- **Deploy time: where the repository lives.** Here a zip unpacked to a
+  temporary directory; the same repository could sit on S3, on a web
+  server or in a zip read in place. The references never name it.
+- **Open time: authorisation.** Which containers a session may read, with
+  which credentials: `authorize` in `ic_repo_open()`. Authorising an S3
+  container anonymously makes tabularberg read it with unsigned requests.
+- **Read time: the tool.** The same location has dialects (`/vsis3/` in
+  GDAL, `s3://` here, an `https://` endpoint), and the same credential may
+  arrive as an environment variable for one reader and an argument for
+  another.
+- **Run time: where the reader runs.** Valid credentials can still be
+  scoped by location; NASA Earthdata's direct S3 access, for example, works
+  only from the same AWS region.
+
+## Building the repository in R
+
+The sample was built with icechunk-python from kerchunk-Parquet references
+(assure's `py/make_repo.py`). The same build takes a page of R, from the
+references and `probe.json` shipped with the package. Coordinates are
+composed from the grid, not fetched; data arrays get metadata and
+references only.
+
+```{r}
+dir <- system.file("extdata", "oisst-sample", package = "tabularberg")
+P <- jsonlite::fromJSON(file.path(dir, "probe.json"), simplifyVector = FALSE)
+prefix <- P$cells$https$ref_prefix
+shape <- unlist(P$array$shape)
+
+zarr_json <- function(shape, chunks, dtype, fill, codecs, dims, attrs = list()) {
+  charToRaw(jsonlite::toJSON(list(
+    zarr_format = 3, node_type = "array", shape = as.list(shape), data_type = dtype,
+    chunk_grid = list(name = "regular", configuration = list(chunk_shape = as.list(chunks))),
+    chunk_key_encoding = list(name = "default", configuration = list(separator = "/")),
+    fill_value = fill, codecs = codecs, attributes = attrs, dimension_names = as.list(dims)),
+    auto_unbox = TRUE, digits = NA, always_decimal = TRUE))
+}
+bytes_le <- list(name = "bytes", configuration = list(endian = "little"))
+
+built <- ic_repo_create(tempfile("oisst-built-"), containers = ic_container(prefix, "http"),
+                        authorize = stats::setNames(list(ic_cred_http()), prefix))
+w <- ic_session_writable(built, "main")
+ic_set(w, "zarr.json", charToRaw('{"zarr_format":3,"node_type":"group","attributes":{}}'))
+
+# coordinates, stored in the repository (uncompressed here)
+ext <- unlist(P$grid$extent)
+ny <- shape[3]
+nx <- shape[4]
+coords <- list(
+  time = list(as.double(unlist(P$time$raw)), list(long_name = "Center time of the day")),
+  zlev = list(0, list(units = "meters", positive = "down")),
+  lat = list(ext[3] + (seq_len(ny) - 0.5) * (ext[4] - ext[3]) / ny, list(units = "degrees_north")),
+  lon = list(ext[1] + (seq_len(nx) - 0.5) * (ext[2] - ext[1]) / nx, list(units = "degrees_east")))
+for (nm in names(coords)) {
+  v <- coords[[nm]][[1]]
+  ic_set(w, paste0(nm, "/zarr.json"),
+         zarr_json(length(v), length(v), "float64", 0, list(bytes_le), nm, coords[[nm]][[2]]))
+  ic_set(w, paste0(nm, "/c/0"), writeBin(v, raw(), size = 8, endian = "little"))
+}
+
+# data arrays: metadata here, chunks as references into NOAA's files
+codecs <- list(bytes_le,
+               list(name = "numcodecs.shuffle", configuration = list(elementsize = 2L)),
+               list(name = "numcodecs.zlib", configuration = list(level = 1L)))
+attrs <- list(scale_factor = P$array$scale_factor, add_offset = P$array$add_offset,
+              `_FillValue` = P$array$fill_value)
+for (v in unlist(P$variables)) {
+  ic_set(w, paste0(v, "/zarr.json"),
+         zarr_json(shape, unlist(P$array$chunks), P$array$dtype, P$array$fill_value, codecs,
+                   c("time", "zlev", "lat", "lon"), attrs))
+  pq <- nanoparquet::read_parquet(file.path(dir, "refs-https", v, "refs.0.parq"))
+  pq <- pq[!is.na(pq$path), ]   # padding rows are format, not data
+  ic_set_virtual_refs(w, paste0("/", v), data.frame(
+    dim_0 = seq_len(nrow(pq)) - 1L, dim_1 = 0L, dim_2 = 0L, dim_3 = 0L,
+    location = pq$path, offset = pq$offset, length = pq$size))
+}
+ic_tag_create(built, "as-virtualized",
+              ic_commit(w, "OISST 1981-09-01..10: virtual refs (units defect preserved)"))
+
+# the repair, a metadata-only commit
+w <- ic_session_writable(built, "main")
+tm <- jsonlite::fromJSON(rawToChar(ic_get(w, "time/zarr.json")), simplifyVector = FALSE)
+tm$attributes$units <- P$time$units_correct
+tm$attributes$calendar <- P$time$calendar
+ic_set(w, "time/zarr.json", charToRaw(jsonlite::toJSON(tm, auto_unbox = TRUE, digits = NA)))
+ic_tag_create(built, "cf-repaired", ic_commit(w, "Add CF time units (metadata-only repair)"))
+```
+
+The result matches the shipped repository: the same references and the
+same array metadata for every data array, and the same repair between the
+tags. (The coordinates differ only in compression: zarr-python stored them
+with zstd.)
+
+```{r}
+ship <- ic_session_readonly(repo, tag = "cf-repaired")
+mine <- ic_session_readonly(built, tag = "cf-repaired")
+same <- function(v) {
+  cols <- c("key", "location", "offset", "length")
+  a <- ic_chunk_refs(ship, v)[, cols]
+  b <- ic_chunk_refs(mine, v)[, cols]
+  m <- function(s) jsonlite::fromJSON(rawToChar(ic_get(s, paste0(sub("^/", "", v), "/zarr.json"))))
+  keep <- c("shape", "data_type", "codecs", "attributes", "dimension_names", "fill_value")
+  c(refs = identical(a[order(a$key), ], b[order(b$key), ]),
+    metadata = identical(m(ship)[keep], m(mine)[keep]))
+}
+sapply(c("/sst", "/anom", "/err", "/ice"), same)
+ic_diff(built, from = list(tag = "as-virtualized"), to = list(tag = "cf-repaired"))
+```
+
+## Other readers
+
+GDAL 3.14 has an Icechunk driver and reads these repositories' metadata and
+coordinates, even from the zip in place
+(`/vsiicechunk/{/vsizip/repo-https-2026-07-07.zip}/`). Its Zarr V3 support
+does not yet decode `numcodecs.shuffle` and `numcodecs.zlib`
+([GDAL issue 14917](https://github.com/OSGeo/gdal/issues/14917)), so the
+data arrays wait on that.

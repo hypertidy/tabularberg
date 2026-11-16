@@ -13,6 +13,7 @@ articles:
     contents:
       - tabularberg
       - byterefs
+      - articles/oisst-sample
 
 reference:
   - title: Getting started
