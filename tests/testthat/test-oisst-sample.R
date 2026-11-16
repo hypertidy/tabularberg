@@ -50,6 +50,9 @@ for (cell in c("https", "s3")) {
 
   test_that(sprintf("OISST probe value read from NOAA [%s]", cell), {
     skip_on_cran()
+    # on Windows R crashes on exit after any network read (open issue), which
+    # fails the whole test run even though every test passes
+    skip_on_os("windows")
     skip_if_not(fetchable(cell), "no S3 client in this build tier")
     skip_if_not_installed("curl")  # skip_if_offline() needs it
     skip_if_offline("www.ncei.noaa.gov")
