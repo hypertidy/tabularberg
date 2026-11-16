@@ -80,3 +80,13 @@ test_that("Windows paths become file:///D:/ URLs, and back", {
                    c("D:/a/x.bin", "/home/me/my data/z.bin", "s3://b/k"))
   expect_identical(.br_container_prefix("file:///D:/a/x.bin"), "file:///D:/a/")
 })
+
+test_that("a % in an Icechunk error message arrives intact", {
+  # extendr passes the message to Rf_error() as a format string; "%s" there
+  # would read a missing argument
+  s <- ic_session_writable(ic_repo_create(file.path(withr::local_tempdir(), "r")), "main")
+  loc <- "file:///no/container/a%s%d%20b/x.bin"
+  e <- tryCatch(ic_set_virtual_ref(s, "a/c/0", loc, 0, 1), error = identity)
+  expect_s3_class(e, "icechunk_error")
+  expect_match(conditionMessage(e), "a%s%d%20b", fixed = TRUE)
+})

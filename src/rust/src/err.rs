@@ -31,7 +31,11 @@ pub(crate) fn tagged(class: &str, e: impl Display) -> Error {
     if let Some(i) = msg.find("\n\ncontext:") {
         msg.truncate(i);
     }
-    Error::Other(format!("[icechunk:{class}] {}", msg.trim_end()))
+    // extendr 0.9's throw_r_error() passes the message to Rf_error() as the
+    // format string, so a "%" in it (a percent-encoded URL or key, "%20",
+    // "%2F") is read as a conversion: garbled at best, and "%s" reads a
+    // pointer that is not there. Escape it; Rf_error prints "%%" as "%".
+    Error::Other(format!("[icechunk:{class}] {}", msg.trim_end().replace('%', "%%")))
 }
 
 pub(crate) fn ic<E: Display>(e: E) -> Error {
