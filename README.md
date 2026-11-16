@@ -44,11 +44,6 @@ Storage backends are chosen at build time with `ICECHUNK_FEATURES`:
 
 `ic_compiled_features()` reports what a build has.
 
-**Windows:** the package builds and its tests pass, but R can crash when it
-exits after tabularberg has read over the network (HTTP(S) or S3). Work done
-in the session is not affected; the crash is in process teardown. Local and
-virtual `file://` repositories are fine. A fix is in progress.
-
 ## A public store as tables
 
 No credentials are needed for this store: NOAA OISST v2.1 daily sea

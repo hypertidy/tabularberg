@@ -9,10 +9,7 @@ ic_diff(repo, from = list(tag = "as-virtualized"), to = list(tag = "cf-repaired"
 s <- ic_session_readonly(repo, tag = "cf-repaired")
 ic_chunk_refs(s, "/sst")[1:2, c("key", "location", "length")]
 \donttest{
-# reading a data chunk needs the container authorised (and the network);
-# not on Windows for now, where R can crash on exit after a network read
-if (.Platform$OS.type != "windows") {
-  s <- ic_session_readonly(ic_repo_open(ox$path, authorize = ox$authorize), tag = "cf-repaired")
-  length(ic_get(s, "sst/c/0/0/0/0"))
-}
+# reading a data chunk needs the container authorised (and the network)
+s <- ic_session_readonly(ic_repo_open(ox$path, authorize = ox$authorize), tag = "cf-repaired")
+length(ic_get(s, "sst/c/0/0/0/0"))
 }

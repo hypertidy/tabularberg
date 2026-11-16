@@ -1,9 +1,10 @@
 # dbplyr integration (Suggests): tbl(con, "refs_<array>") works on an
 # Icechunk connection, translated in the dialect of its SQL engine.
 # The tokio runtime is shut down when R exits (and when the package is
-# unloaded): on Windows, exiting with it live, after any HTTP/TLS use, crashed
-# R in ExitProcess (CI: tests and --run-donttest examples). The finalizer is
-# on an environment of our own so it runs once, at exit, with onexit = TRUE.
+# unloaded), so its threads stop before process teardown. (The Windows crash
+# on exit after TLS use was aws-lc, not this: see src/Makevars.win.in.) The
+# finalizer is on an environment of our own so it runs once, at exit, with
+# onexit = TRUE.
 .runtime_guard <- new.env(parent = emptyenv())
 
 .onLoad <- function(libname, pkgname) {

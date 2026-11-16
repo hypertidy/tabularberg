@@ -18,6 +18,15 @@ $(SHLIB): $(STATLIB)
 
 CARGOTMP = $(CURDIR)/.cargo
 
+# aws-lc (rustls' crypto, via aws-lc-sys) at the Windows 10 API level. Rtools'
+# gcc defaults to _WIN32_WINNT=0x0601 (Windows 7), where aws-lc's
+# CRYPTO_sysrand uses BCryptGenRandom; that fails in aws-lc's exit-time DRBG
+# zeroization, which runs on DLL_PROCESS_DETACH inside ExitProcess, and
+# aws-lc then aborts: R crashed on exit after any TLS use. At 0x0A00 it uses
+# ProcessPrng, as MSVC builds do, which works there. Rust's Windows targets
+# need Windows 10 anyway. https://github.com/mdsumner/windows-rust-tls-exit
+AWSLC_CFLAGS = -D_WIN32_WINNT=0x0A00 $(AWS_LC_SYS_CFLAGS)
+
 $(STATLIB):
 	mkdir -p $(TARGET_DIR)/libgcc_mock
 	touch $(TARGET_DIR)/libgcc_mock/libgcc_eh.a
@@ -29,6 +38,7 @@ $(STATLIB):
 	fi; \
 	export PATH="$(PATH):$(USERPROFILE)/.cargo/bin" && \
 	export LIBRARY_PATH="$(LIBRARY_PATH);$(CURDIR)/$(TARGET_DIR)/libgcc_mock" && \
+	export AWS_LC_SYS_CFLAGS="$(AWSLC_CFLAGS)" && \
 	cargo build @OFFLINE@ --target=$(TARGET) --no-default-features --features @FEATURES@ --lib @PROFILE@ \
 		--manifest-path=./rust/Cargo.toml --target-dir $(TARGET_DIR)
 

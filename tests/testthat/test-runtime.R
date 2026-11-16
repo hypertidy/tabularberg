@@ -1,6 +1,5 @@
 test_that("the runtime shuts down, and starts again on next use", {
-  # R's exit finalizer and .onUnload() call this (Windows crashed on exit
-  # with the runtime live after HTTP/TLS use)
+  # R's exit finalizer and .onUnload() call this
   ex <- ic_example_repo()
   ic_runtime_shutdown_()
   expect_false(ic_runtime_shutdown_())  # nothing running now
