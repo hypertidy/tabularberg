@@ -11,6 +11,9 @@ decode_i16 <- function(raw, n) {
   readBin(b, "integer", n = n, size = 2, endian = "little")
 }
 
+# the minimal tier has no S3 client, so s3:// chunks cannot be fetched at all
+fetchable <- function(cell) cell != "s3" || "s3_object_store" %in% ic_compiled_features()
+
 for (cell in c("https", "s3")) {
   test_that(sprintf("OISST sample matches its contract offline [%s]", cell), {
     ox <- ic_example_oisst(cell)
@@ -38,14 +41,16 @@ for (cell in c("https", "s3")) {
     expect_equal(nrow(refs), P$sources$n)
     expect_true(all(startsWith(refs$location, P$cells[[cell]]$ref_prefix)))
 
-    # an unauthorised read is refused before any network access
+    # an unauthorised read is refused before any network access (with no
+    # S3 client compiled in, it fails for that reason instead)
     e <- tryCatch(ic_get(s1, "sst/c/0/0/0/0"), error = identity)
     expect_s3_class(e, "icechunk_error")
-    expect_match(conditionMessage(e), P$cells[[cell]]$ref_prefix, fixed = TRUE)
+    if (fetchable(cell)) expect_match(conditionMessage(e), P$cells[[cell]]$ref_prefix, fixed = TRUE)
   })
 
   test_that(sprintf("OISST probe value read from NOAA [%s]", cell), {
     skip_on_cran()
+    skip_if_not(fetchable(cell), "no S3 client in this build tier")
     skip_if_not_installed("curl")  # skip_if_offline() needs it
     skip_if_offline("www.ncei.noaa.gov")
     ox <- ic_example_oisst(cell)
