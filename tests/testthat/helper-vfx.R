@@ -8,6 +8,9 @@
 #
 # Values are (0:3071) / 4, C order, little-endian float32. The container is
 # file://<dir>/, so nothing depends on where the package is checked.
+# the local path of a file:// URL (file:///D:/x -> D:/x on Windows)
+url_path <- function(u) .br_unresolve(u, data.frame(prefix = character(), replacement = character()))
+
 local_vfx <- function(env = parent.frame()) {
   d <- withr::local_tempdir(.local_envir = env)
   src <- file.path(d, "src"); dir.create(src)
@@ -15,7 +18,8 @@ local_vfx <- function(env = parent.frame()) {
   bytes <- writeBin(vals, raw(), size = 4, endian = "little")
   writeBin(bytes, file.path(src, "grid.bin"))
   writeBin(c(as.raw(rep(0x20, 2048)), bytes), file.path(src, "grid.nc"))
-  prefix <- paste0("file://", normalizePath(src), "/")
+  # spelled as Icechunk stores it (file:///D:/... on Windows)
+  prefix <- .path_file_url(paste0(normalizePath(src, winslash = "/"), "/"))
   repo <- ic_repo_create(file.path(d, "repo"), containers = ic_container(prefix, "local", path = normalizePath(src)),
                          authorize = prefix)
   ic_repo_save_config(repo)

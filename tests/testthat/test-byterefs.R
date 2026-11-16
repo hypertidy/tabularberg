@@ -38,7 +38,7 @@ test_that("Icechunk -> byterefs -> Icechunk -> byterefs is the identity (virtual
   s <- ic_session_readonly(ic_repo_open(fx$path, authorize = fx$virtual_prefix))
   b1 <- ic_to_byterefs(s)
   expect_s3_class(b1, "byterefs")
-  expect_true(all(startsWith(b1$sources$source, "/")))  # file:// -> verbatim path
+  expect_true(all(grepl("^(/|[A-Za-z]:/)", b1$sources$source)))  # file:// -> local path
   db <- withr::local_tempfile(fileext = ".sqlite")
   ic_to_byterefs(s, dsn = db)
   cmp <- ic_byterefs_compare(b1, db)

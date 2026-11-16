@@ -129,7 +129,7 @@ test_that("appended refs inherit the checksum of a known source", {
   # private copy of the source, recorded with its mtime (so refs carry a checksum)
   d <- withr::local_tempdir()
   f <- file.path(d, "grid.bin")
-  file.copy(sub("^file://", "", ic_chunk_refs(src, "/from_bin")$location[1]), f)
+  expect_true(file.copy(url_path(ic_chunk_refs(src, "/from_bin")$location[1]), f))
   now <- floor(as.numeric(file.mtime(f)))
   rf <- br$refs
   br$sources <- br$sources[0, ]; br$sources[1, ] <- list(1, f, NA, now, NA)
