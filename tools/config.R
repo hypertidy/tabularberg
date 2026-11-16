@@ -24,5 +24,21 @@ txt <- gsub("@OFFLINE@", if (!not_cran && vendor) "--offline -j 2" else "", txt,
 # target dir makes check scan the static library and build outputs).
 in_checkout <- dir.exists(".git") || dir.exists("../.git")
 keep_target <- not_cran && in_checkout
+# macOS: C code built by crates (aws-lc) otherwise targets the SDK version,
+# which can be newer than the version R links for, and check WARNs ("built
+# for newer 'macOS' version (26.5) than being linked (26.0)"). Unless the
+# builder set a target, use rustc's own default, as the Rust code does.
+mac_target <- ""
+if (Sys.info()[["sysname"]] == "Darwin" && !nzchar(Sys.getenv("MACOSX_DEPLOYMENT_TARGET"))) {
+  dt <- tryCatch(system2("rustc", c("--print", "deployment-target"), stdout = TRUE, stderr = FALSE),
+                 error = function(e) character(), warning = function(w) character())
+  # rustc prints "MACOSX_DEPLOYMENT_TARGET=11.0" (older: "deployment_target=11.0")
+  dt <- sub("^[^=]*=", "", grep("^(MACOSX_DEPLOYMENT_TARGET|deployment_target)=", dt, value = TRUE))
+  if (length(dt) && nzchar(dt[1])) {
+    message("icechunk: MACOSX_DEPLOYMENT_TARGET=", dt[1], " (rustc default)")
+    mac_target <- paste0("export MACOSX_DEPLOYMENT_TARGET=", dt[1], " && ")
+  }
+}
+txt <- gsub("@MACOS_TARGET@", mac_target, txt, fixed = TRUE)
 txt <- gsub("@CLEAN_TARGET@", if (!keep_target) "$(TARGET_DIR)" else "", txt, fixed = TRUE)
 writeLines(txt, mk)
