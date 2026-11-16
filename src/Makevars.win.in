@@ -1,0 +1,39 @@
+# Windows (Rtools, GNU toolchain). Written to src/Makevars.win by
+# tools/config.R, from configure.win. Pattern from rextendr's template.
+TARGET = $(subst 64,x86_64,$(subst 32,i686,$(WIN)))-pc-windows-gnu
+TARGET_DIR = ./rust/target
+LIBDIR = $(TARGET_DIR)/$(TARGET)/@LIBDIR@
+STATLIB = $(LIBDIR)/libtabularberg.a
+# System libraries the Rust standard library, tokio, rustls/aws-lc and the
+# platform certificate verifier link against on Windows.
+PKG_LIBS = -L$(LIBDIR) -ltabularberg -lws2_32 -ladvapi32 -luserenv -lbcrypt -lntdll \
+	-lcrypt32 -lsecur32 -lncrypt -lole32 -loleaut32 -liphlpapi -lpsapi -lshell32 \
+	-lsynchronization -luuid
+
+all: $(SHLIB) rust_clean
+
+.PHONY: $(STATLIB)
+
+$(SHLIB): $(STATLIB)
+
+CARGOTMP = $(CURDIR)/.cargo
+
+$(STATLIB):
+	mkdir -p $(TARGET_DIR)/libgcc_mock
+	touch $(TARGET_DIR)/libgcc_mock/libgcc_eh.a
+	if [ -f ./rust/vendor.tar.xz ]; then \
+		tar xf rust/vendor.tar.xz -C rust && \
+		mkdir -p $(CARGOTMP) && \
+		cp rust/vendor-config.toml $(CARGOTMP)/config.toml && \
+		export CARGO_HOME=$(CARGOTMP); \
+	fi; \
+	export PATH="$(PATH):$(USERPROFILE)/.cargo/bin" && \
+	export LIBRARY_PATH="$(LIBRARY_PATH);$(CURDIR)/$(TARGET_DIR)/libgcc_mock" && \
+	cargo build @OFFLINE@ --target=$(TARGET) --no-default-features --features @FEATURES@ --lib @PROFILE@ \
+		--manifest-path=./rust/Cargo.toml --target-dir $(TARGET_DIR)
+
+rust_clean: $(SHLIB)
+	rm -Rf $(CARGOTMP) ./rust/vendor @CLEAN_TARGET@
+
+clean:
+	rm -Rf $(SHLIB) $(STATLIB) $(OBJECTS) $(TARGET_DIR)

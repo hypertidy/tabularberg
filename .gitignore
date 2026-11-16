@@ -1,5 +1,6 @@
 src/rust/target
 src/Makevars
+src/Makevars.win
 *.o
 *.so
 docs/
