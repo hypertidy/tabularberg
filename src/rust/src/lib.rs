@@ -24,6 +24,14 @@ fn ic_compiled_features_() -> Vec<String> {
     f
 }
 
+/// Shut the tokio runtime down (R exit finalizer, .onUnload). TRUE if one
+/// was running and stopped.
+/// @noRd
+#[extendr]
+fn ic_runtime_shutdown_() -> bool {
+    runtime::shutdown()
+}
+
 extendr_module! {
     mod tabularberg;
     use storage;
@@ -31,4 +39,5 @@ extendr_module! {
     use session;
     fn ic_icechunk_version_;
     fn ic_compiled_features_;
+    fn ic_runtime_shutdown_;
 }

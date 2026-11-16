@@ -9,6 +9,11 @@ ic_icechunk_version_ <- function() .Call(wrap__ic_icechunk_version_)
 #' @noRd
 ic_compiled_features_ <- function() .Call(wrap__ic_compiled_features_)
 
+#' Shut the tokio runtime down (R exit finalizer, .onUnload). TRUE if one
+#' was running and stopped.
+#' @noRd
+ic_runtime_shutdown_ <- function() .Call(wrap__ic_runtime_shutdown_)
+
 #' @noRd
 ic_storage_local_ <- function(path) .Call(wrap__ic_storage_local_, path)
 
