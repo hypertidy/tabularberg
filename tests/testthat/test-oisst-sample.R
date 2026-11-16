@@ -46,6 +46,7 @@ for (cell in c("https", "s3")) {
 
   test_that(sprintf("OISST probe value read from NOAA [%s]", cell), {
     skip_on_cran()
+    skip_if_not_installed("curl")  # skip_if_offline() needs it
     skip_if_offline("www.ncei.noaa.gov")
     ox <- ic_example_oisst(cell)
     P <- ox$probe
