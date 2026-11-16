@@ -1,24 +1,19 @@
-# pkgdown site for icechunkr.
+# pkgdown site for icechunkr, https://hypertidy.github.io/icechunkr/
 #
-# Today: manual only (Actions > pkgdown > Run workflow). Every run builds
-# the site and uploads it as an artifact you can download and inspect.
-# Deployment happens only if you tick "deploy", and it fails until Pages is
-# on (Settings > Pages > Source: "GitHub Actions").
+# Builds and deploys on push to main. A manual run
+# (Actions > pkgdown > Run workflow) builds the site and uploads it as an
+# artifact; it deploys only if "deploy" is ticked.
 #
-# To go live (`url:` in _pkgdown.yml is already set):
-#   1. turn on Pages with source "GitHub Actions";
-#   2. uncomment the push/release triggers below (deploys then happen on
-#      push to main and on release).
-#
-# The site deploys straight from the artifact, so there is no gh-pages
-# branch and no committed docs/ folder (docs/ stays in .gitignore).
+# The site deploys straight from the artifact (Pages source "GitHub
+# Actions"), so there is no gh-pages branch and no committed docs/ folder.
 name: pkgdown
 
 on:
-  # push:
-  #   branches: [main]
-  # release:
-  #   types: [published]
+  # No release trigger: the github-pages environment allows deploys from
+  # main only (a release runs on its tag), and the push to main that a
+  # release tags has already deployed.
+  push:
+    branches: [main]
   workflow_dispatch:
     inputs:
       deploy:
@@ -65,8 +60,7 @@ jobs:
     needs: build
     if: >-
       (github.event_name == 'workflow_dispatch' && inputs.deploy) ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      github.event_name == 'release'
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
     runs-on: ubuntu-latest
     permissions:
       pages: write
