@@ -106,4 +106,4 @@ importFrom(methods,
   setMethod,
   show
 )
-useDynLib(icechunkr, .registration = TRUE)
+useDynLib(tabularberg, .registration = TRUE)

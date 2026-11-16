@@ -16,7 +16,7 @@ the previous value (invisibly).
 Reading an array's chunk references (\code{\link[=ic_chunk_refs]{ic_chunk_refs()}},
 \code{\link[=ic_to_byterefs]{ic_to_byterefs()}}, \code{\link[=ic_refs_arrow]{ic_refs_arrow()}}, the DBI \verb{refs_<array>} tables)
 needs every manifest that covers it. With split manifests on remote
-storage, fetching them one after another dominates; icechunkr first
+storage, fetching them one after another dominates; tabularberg first
 loads them into the session's cache this many at a time.
 }
 \examples{

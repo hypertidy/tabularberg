@@ -1,4 +1,4 @@
-# R CMD check for icechunkr. Push/PR: Ubuntu, cloud tier (cheap).
+# R CMD check for tabularberg. Push/PR: Ubuntu, cloud tier (cheap).
 # Manual run (workflow_dispatch): the OS x tier matrix.
 name: check
 

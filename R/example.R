@@ -41,7 +41,7 @@ ic_example_repo <- function(path = tempfile("icechunk-example-")) {
   repo <- ic_repo_create(rp, containers = ic_container(prefix, "local", path = src), authorize = prefix)
   ic_repo_save_config(repo)
   s <- ic_session_writable(repo, "main")
-  ic_set(s, "zarr.json", charToRaw('{"zarr_format":3,"node_type":"group","attributes":{"title":"icechunkr example"}}'))
+  ic_set(s, "zarr.json", charToRaw('{"zarr_format":3,"node_type":"group","attributes":{"title":"tabularberg example"}}'))
   meta <- function(shape, chunks, dtype, fill) charToRaw(sprintf(
     '{"zarr_format":3,"node_type":"array","shape":[%s],"data_type":"%s",
       "chunk_grid":{"name":"regular","configuration":{"chunk_shape":[%s]}},

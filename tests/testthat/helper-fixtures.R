@@ -10,4 +10,4 @@ manifest <- function() jsonlite::fromJSON(file.path(fixture_root(), "manifest.js
 fx_path <- function(name) file.path(fixture_root(), manifest()$fixtures[[name]]$path)
 fx_keys <- function(name) jsonlite::fromJSON(file.path(fixture_root(), "expected", name, "keys.json"), simplifyVector = FALSE)
 sha <- function(raw) paste(as.character(openssl::sha256(raw)))
-list2 <- function(prefix) stats::setNames(list(icechunkr::ic_cred_local()), prefix)
+list2 <- function(prefix) stats::setNames(list(tabularberg::ic_cred_local()), prefix)

@@ -288,7 +288,7 @@ ic_icechunk_version <- function() ic_icechunk_version_()
 #' Reading an array's chunk references ([ic_chunk_refs()],
 #' [ic_to_byterefs()], [ic_refs_arrow()], the DBI `refs_<array>` tables)
 #' needs every manifest that covers it. With split manifests on remote
-#' storage, fetching them one after another dominates; icechunkr first
+#' storage, fetching them one after another dominates; tabularberg first
 #' loads them into the session's cache this many at a time.
 #'
 #' @param n manifests fetched at once (1 = sequential).

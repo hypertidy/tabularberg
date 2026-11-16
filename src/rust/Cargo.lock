@@ -1774,21 +1774,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "icechunkr"
-version = "0.0.1"
-dependencies = [
- "arrow-array",
- "arrow-schema",
- "bytes",
- "chrono",
- "extendr-api",
- "futures",
- "icechunk",
- "serde_json",
- "tokio",
-]
-
-[[package]]
 name = "icu_collections"
 version = "2.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3279,6 +3264,21 @@ checksum = "8e1d1b10ced5ca923a1fcb8d03e96b8d3268065d724548c0211415ff6ac6bac4"
 dependencies = [
  "core-foundation-sys",
  "libc",
+]
+
+[[package]]
+name = "tabularberg"
+version = "0.0.1"
+dependencies = [
+ "arrow-array",
+ "arrow-schema",
+ "bytes",
+ "chrono",
+ "extendr-api",
+ "futures",
+ "icechunk",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

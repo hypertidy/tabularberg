@@ -20,7 +20,7 @@ options(width = 100)
 A virtual Icechunk array does not hold its data. It holds references:
 for each chunk, a file, a byte offset and a length. A table is the
 natural form for that information: one row per chunk, with columns for
-the chunk's indices and where its bytes are. icechunkr works with
+the chunk's indices and where its bytes are. tabularberg works with
 references in that form both ways. It reads any snapshot out as tables
 and writes tables back in as commits.
 
@@ -40,7 +40,7 @@ this relates to kerchunk and VirtualiZarr manifests.*
 ## Out: a snapshot as tables
 
 ```{r}
-library(icechunkr)
+library(tabularberg)
 ex <- ic_example_repo()
 repo <- ic_repo_open(ex$path, authorize = ex$authorize)
 s <- ic_session_readonly(repo, branch = "main")

@@ -1,3 +1,3 @@
 library(testthat)
-library(icechunkr)
-test_check("icechunkr")
+library(tabularberg)
+test_check("tabularberg")

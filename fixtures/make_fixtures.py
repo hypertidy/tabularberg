@@ -1,4 +1,4 @@
-"""Build the icechunkr test fixture corpus.
+"""Build the tabularberg test fixture corpus.
 
 With uv (what CI runs), from the repository root:
   uv run --no-project --python 3.12 --with "icechunk==2.3.*" --with "zarr>=3" --with numpy --with h5py python -I fixtures/make_fixtures.py

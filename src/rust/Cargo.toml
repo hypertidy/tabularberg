@@ -1,5 +1,5 @@
 [package]
-name = "icechunkr"
+name = "tabularberg"
 version = "0.0.1"
 edition = "2024"
 rust-version = "1.95"
@@ -7,7 +7,7 @@ publish = false
 
 [lib]
 crate-type = ["staticlib", "rlib"]
-name = "icechunkr"
+name = "tabularberg"
 
 [features]
 default = ["minimal"]

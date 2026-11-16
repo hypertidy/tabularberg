@@ -1,4 +1,4 @@
-Package: icechunkr
+Package: tabularberg
 Title: Icechunk Transactional Array Repositories
 Version: 0.0.0.9000
 Authors@R: c(
@@ -15,8 +15,8 @@ Description: Bindings to the 'Icechunk' Rust library: storage, repositories,
     they point to. Sessions can be handed to other native code as bytes.
     Chunk references of any snapshot can be read as a table.
 License: Apache License (>= 2)
-URL: https://github.com/hypertidy/icechunkr, https://hypertidy.github.io/icechunkr/
-BugReports: https://github.com/hypertidy/icechunkr/issues
+URL: https://github.com/hypertidy/tabularberg, https://hypertidy.github.io/tabularberg/
+BugReports: https://github.com/hypertidy/tabularberg/issues
 Encoding: UTF-8
 Roxygen: list(markdown = TRUE)
 Depends:

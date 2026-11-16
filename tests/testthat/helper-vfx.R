@@ -1,4 +1,4 @@
-# A self-contained virtual-reference repository, built with icechunkr in a
+# A self-contained virtual-reference repository, built with tabularberg in a
 # temporary directory, shaped like the Python-written `virtual_v2` fixture:
 #
 #   /from_bin  float32 64 x 48, chunks 16 x 48: four virtual refs into

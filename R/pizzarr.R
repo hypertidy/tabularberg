@@ -1,4 +1,4 @@
-# WP3: a pizzarr store backed by an icechunkr session, for pizzarr's pure-R
+# WP3: a pizzarr store backed by an tabularberg session, for pizzarr's pure-R
 # code path (CRAN pizzarr, no Rust). All I/O goes through ic_get / ic_set /
 # ic_list / ic_delete; pizzarr never sees Icechunk.
 
@@ -43,7 +43,7 @@ ic_pizzarr_store <- function(session) {
 
 .pz_class <- function() {
   if (!is.null(.pz_env$cls)) return(.pz_env$cls)
-  .pz_env$cls <- R6::R6Class("IcechunkrStore",
+  .pz_env$cls <- R6::R6Class("TabularbergStore",
     inherit = pizzarr::Store,
     private = list(sess = NULL, snapshot = NULL),
     public = list(
@@ -97,7 +97,7 @@ ic_pizzarr_store <- function(session) {
       get_store_identifier = function() NULL,
       session = function() private$sess,
       print = function(...) {
-        cat("<IcechunkrStore> snapshot ", private$snapshot,
+        cat("<TabularbergStore> snapshot ", private$snapshot,
             if (private$writeable) " (writable)" else " (read-only)", "\n", sep = "")
         invisible(self)
       }

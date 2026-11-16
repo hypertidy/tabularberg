@@ -1,6 +1,6 @@
 # DBI interface: an Icechunk repository as a database of byterefs tables.
 #
-#   con <- dbConnect(icechunkr::Icechunk(), "path/to/repo", branch = "main")
+#   con <- dbConnect(tabularberg::Icechunk(), "path/to/repo", branch = "main")
 #   dbListTables(con)                       # meta, arrays, sources, refs_<array>,
 #                                           # branches, tags, ancestry, nodes
 #   dbReadTable(con, "refs_sst")            # one row per chunk (byterefs layout)
@@ -714,7 +714,7 @@ setMethod("dbGetInfo", "IcechunkConnection", function(dbObj, ...) {
 #' @rdname Icechunk
 #' @export
 setMethod("dbGetInfo", "IcechunkDriver", function(dbObj, ...) {
-  list(driver.version = utils::packageVersion("icechunkr"), client.version = ic_icechunk_version())
+  list(driver.version = utils::packageVersion("tabularberg"), client.version = ic_icechunk_version())
 })
 
 #' @rdname Icechunk

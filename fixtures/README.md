@@ -1,4 +1,4 @@
-# icechunkr test fixtures
+# tabularberg test fixtures
 
 Small Icechunk repositories written by icechunk-python, which the tests in
 `tests/testthat/test-fixtures-read.R` read back and compare byte for byte.

@@ -1,4 +1,4 @@
-# pkgdown site for icechunkr, https://hypertidy.github.io/icechunkr/
+# pkgdown site for tabularberg, https://hypertidy.github.io/tabularberg/
 #
 # Builds and deploys on push to main. A manual run
 # (Actions > pkgdown > Run workflow) builds the site and uploads it as an

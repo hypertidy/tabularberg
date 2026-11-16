@@ -27,9 +27,9 @@ line <- function(p) {
           paste(a, collapse = "; "))
 }
 writeLines(c(
-  "Authors and licences of the Rust crates compiled into icechunkr",
+  "Authors and licences of the Rust crates compiled into tabularberg",
   "",
-  "icechunkr links Rust crates (from crates.io) into its shared library. Below",
+  "tabularberg links Rust crates (from crates.io) into its shared library. Below",
   "is every crate the 'full' feature tier can compile (normal and build",
   "dependencies, all target platforms; the 'minimal' and 'cloud' tiers use a",
   "subset). Generated from Cargo.lock by tools/authors.R; rerun it when",

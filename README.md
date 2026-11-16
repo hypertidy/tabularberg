@@ -1,10 +1,10 @@
-# icechunkr
+# tabularberg
 
 <!-- badges: start -->
 <!-- badges: end -->
 
 R access to [Icechunk](https://icechunk.io) repositories: transactional,
-versioned Zarr v3 stores. icechunkr binds the Rust `icechunk` crate
+versioned Zarr v3 stores. tabularberg binds the Rust `icechunk` crate
 (2.3.1) through [extendr](https://extendr.rs/), and offers two ways
 in:
 
@@ -18,7 +18,7 @@ in:
   queried with SQLite, DuckDB or dbplyr, and appending to them writes
   Icechunk commits.
 
-Data is decoded elsewhere: icechunkr hands a session to
+Data is decoded elsewhere: tabularberg hands a session to
 [pizzarr](https://github.com/zarr-developers/pizzarr) (`ic_pizzarr_store()`),
 or GDAL reads the same repository (`/vsiicechunk/`).
 
@@ -26,12 +26,12 @@ Experimental. The API may change.
 
 ## Install
 
-icechunkr needs a Rust toolchain, rustc 1.95 or newer (the icechunk
+tabularberg needs a Rust toolchain, rustc 1.95 or newer (the icechunk
 crate's minimum).
 
 ```r
 # install.packages("pak")
-pak::pak("hypertidy/icechunkr")
+pak::pak("hypertidy/tabularberg")
 ```
 
 Storage backends are chosen at build time with `ICECHUNK_FEATURES`:
@@ -51,7 +51,7 @@ surface temperature, with each chunk a virtual reference into NOAA's
 netCDF files on AWS.
 
 ```r
-library(icechunkr)
+library(tabularberg)
 library(DBI)
 
 con <- dbConnect(Icechunk(), "https://data.source.coop/ausantarctic/ausantarctic-scratch/oisst/oisst-v2.1-daily/icechunk")
@@ -73,7 +73,7 @@ dbGetQuery(con, "SELECT count(*) AS chunks, sum(size) / 1e9 AS gigabytes FROM re
 Filters on chunk indices (`dim_k`) are pushed down to Icechunk, through
 joins too. Only the covering chunk references are read, and on stores
 with split manifests only the covering manifests. The
-`vignette("icechunkr")` vignette continues from here. It covers dbplyr,
+`vignette("tabularberg")` vignette continues from here. It covers dbplyr,
 a local versioned catalogue with tags and commits, and decoding a day of
 data through pizzarr.
 

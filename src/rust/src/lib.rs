@@ -25,7 +25,7 @@ fn ic_compiled_features_() -> Vec<String> {
 }
 
 extendr_module! {
-    mod icechunkr;
+    mod tabularberg;
     use storage;
     use repo;
     use session;
