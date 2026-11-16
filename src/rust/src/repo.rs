@@ -9,6 +9,10 @@ use icechunk::format::SnapshotId;
 use icechunk::format::format_constants::SpecVersionBin;
 use icechunk::repository::{Repository, VersionInfo};
 use icechunk::RepositoryConfig;
+use icechunk::config::Credentials;
+use icechunk::storage::S3Credentials;
+use icechunk::ObjectStoreConfig;
+use std::collections::HashMap;
 
 use crate::err::{arg, ic, R};
 use crate::runtime::block_on;
@@ -157,8 +161,40 @@ fn ic_repo_containers_(repo: ExternalPtr<RRepo>) -> List {
 #[extendr]
 fn ic_repo_reauthorize_(repo: ExternalPtr<RRepo>, authorize_json: &str) -> R<ExternalPtr<RRepo>> {
     let auth = authorize_map(authorize_json)?;
-    let r = block_on(repo.inner.reopen(None, Some(auth))).map_err(ic)?;
+    let config = anonymous_containers(&repo.inner, &auth);
+    let r = block_on(repo.inner.reopen(config, Some(auth))).map_err(ic)?;
     Ok(ExternalPtr::new(RRepo { inner: Arc::new(r) }))
+}
+
+/// Mark S3 containers anonymous when they are authorised with anonymous
+/// credentials. icechunk 2.3.1's object_store S3 fetcher (the `cloud` tier)
+/// applies an anonymous credential and then overwrites it with the
+/// container's own `anonymous` flag, so the credential alone still signs
+/// requests and looks for credentials in instance metadata. The AWS SDK
+/// fetcher (`full` tier, icechunk-python) honours the credential; this makes
+/// both behave the same. Returns the full container map (reopen replaces it)
+/// or None when nothing changes.
+fn anonymous_containers(
+    repo: &Repository,
+    auth: &HashMap<String, Option<Credentials>>,
+) -> Option<RepositoryConfig> {
+    let mut conts = repo.config().virtual_chunk_containers.clone()?;
+    let mut changed = false;
+    for (prefix, cont) in conts.iter_mut() {
+        if !matches!(auth.get(prefix), Some(Some(Credentials::S3(S3Credentials::Anonymous)))) {
+            continue;
+        }
+        match &mut cont.store {
+            ObjectStoreConfig::S3(o) | ObjectStoreConfig::S3Compatible(o) | ObjectStoreConfig::Tigris(o)
+                if !o.anonymous =>
+            {
+                o.anonymous = true;
+                changed = true;
+            }
+            _ => {}
+        }
+    }
+    changed.then(|| RepositoryConfig { virtual_chunk_containers: Some(conts), ..Default::default() })
 }
 
 /// @noRd

@@ -26,3 +26,18 @@ test_that("broad authorize reads virtual chunks; containers listed", {
   expect_type(ic_get(s, "from_bin/c/0/0"), "raw")
   expect_error(ic_repo_open(fx$path, authorize = paste0(fx$virtual_prefix, "deeper/")), "lies inside")
 })
+
+test_that("an anonymous S3 credential marks its container anonymous", {
+  # icechunk 2.3.1's object_store S3 fetcher lets the container's own
+  # anonymous flag overwrite an anonymous credential; see anonymous_containers()
+  p <- "s3://example-bucket/data/"
+  rp <- withr::local_tempdir()
+  repo <- ic_repo_create(rp, containers = ic_container(p, "s3", region = "us-east-1"),
+                         authorize = stats::setNames(list(ic_cred_s3("anonymous")), p))
+  store <- ic_repo_config(repo)$virtual_chunk_containers[[p]]$store$s3
+  expect_true(store$anonymous)
+  expect_identical(store$region, "us-east-1")
+  repo2 <- ic_repo_open(rp, containers = ic_container(p, "s3", region = "us-east-1"),
+                        authorize = stats::setNames(list(ic_cred_s3("from_env")), p))
+  expect_false(ic_repo_config(repo2)$virtual_chunk_containers[[p]]$store$s3$anonymous)
+})

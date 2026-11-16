@@ -1,8 +1,8 @@
-test_that("an instance-metadata failure gets a missing-region hint", {
+test_that("an instance-metadata failure gets an anonymous-access hint", {
   msg <- paste0("error fetching virtual reference: Generic S3 error: Error performing PUT ",
                 "http://169.254.169.254/latest/api/token in 2.6s - 404 Not Found: <html><body>x</body></html>")
   out <- .hint(msg)
-  expect_match(out, "no region is set", fixed = TRUE)
+  expect_match(out, "ic_cred_s3(\"anonymous\")", fixed = TRUE)
   expect_false(grepl("<html>", out, fixed = TRUE))
   expect_match(out, "error fetching virtual reference", fixed = TRUE)
 })
