@@ -99,6 +99,28 @@ fn strs(x: &Strings) -> Vec<String> {
     (0..x.len()).map(|i| (&*x.elt(i)).to_string()).collect()
 }
 
+/// The local path of a `file://` URL's path part, as R's `.br_unresolve()`
+/// gives it: `/D:/x` -> `D:/x` (Windows drive), percent-escapes decoded.
+fn file_url_path(rest: &str) -> String {
+    let b = rest.as_bytes();
+    let p = if b.len() >= 3 && b[0] == b'/' && b[1].is_ascii_alphabetic() && b[2] == b':' { &b[1..] } else { b };
+    let hex = |c: u8| (c as char).to_digit(16).map(|d| d as u8);
+    let mut out = Vec::with_capacity(p.len());
+    let mut i = 0;
+    while i < p.len() {
+        if p[i] == b'%' && i + 2 < p.len() {
+            if let (Some(h), Some(l)) = (hex(p[i + 1]), hex(p[i + 2])) {
+                out.push(h * 16 + l);
+                i += 3;
+                continue;
+            }
+        }
+        out.push(p[i]);
+        i += 1;
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 /// Concurrent gets; list of raw (NULL where the key is absent).
 /// @noRd
 #[extendr]
@@ -721,7 +743,7 @@ fn ic_refs_arrow_(
                 }
             }
             match u.strip_prefix("file://") {
-                Some(rest) if rest.starts_with('/') => rest.to_string(),
+                Some(rest) if rest.starts_with('/') => file_url_path(rest),
                 _ => u.to_string(),
             }
         };
@@ -1033,4 +1055,18 @@ extendr_module! {
     fn ic_session_fork_;
     fn ic_session_merge_;
     fn ic_handoff_version_;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::file_url_path;
+
+    #[test]
+    fn file_url_path_matches_br_unresolve() {
+        assert_eq!(file_url_path("/D:/a/x.bin"), "D:/a/x.bin");
+        assert_eq!(file_url_path("/home/me/x.bin"), "/home/me/x.bin");
+        assert_eq!(file_url_path("/home/me/my%20data/x%2"), "/home/me/my data/x%2");
+        assert_eq!(file_url_path("/a/%zz/%41"), "/a/%zz/A");
+        assert_eq!(file_url_path("/C:/Users/Fran%C3%A7ois/x"), "C:/Users/François/x");
+    }
 }
