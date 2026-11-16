@@ -91,11 +91,19 @@ fn ic_get_(s: ExternalPtr<RSession>, k: &str, offset: f64, length: f64) -> R<Rob
     }
 }
 
+/// The elements of a character vector, read one by one. Not `Strings::iter()`:
+/// extendr 0.9 builds that from `STRING_PTR_RO()`, which for a zero-length
+/// vector is R's dummy pointer (1), not aligned for a slice, and
+/// `slice::from_raw_parts` on it is undefined behaviour (debug builds abort).
+fn strs(x: &Strings) -> Vec<String> {
+    (0..x.len()).map(|i| (&*x.elt(i)).to_string()).collect()
+}
+
 /// Concurrent gets; list of raw (NULL where the key is absent).
 /// @noRd
 #[extendr]
 fn ic_get_many_(s: ExternalPtr<RSession>, keys: Strings) -> R<List> {
-    let ks: Vec<String> = keys.iter().map(|k| key(&*k)).collect();
+    let ks: Vec<String> = strs(&keys).iter().map(|k| key(k)).collect();
     let res: Vec<std::result::Result<Bytes, icechunk::store::StoreError>> = block_on(async {
         futures::stream::iter(ks.iter().map(|k| s.store.get(k, &ByteRange::ALL)))
             .buffered(64)
@@ -687,10 +695,9 @@ fn ic_refs_arrow_(
     if addr == 0 {
         return Err(arg("null stream address"));
     }
-    let mut rules: Vec<(String, String)> = rules_replacement
-        .iter()
-        .zip(rules_prefix.iter())
-        .map(|(r, q)| ((&*r).to_string(), (&*q).to_string()))
+    let mut rules: Vec<(String, String)> = strs(&rules_replacement)
+        .into_iter()
+        .zip(strs(&rules_prefix))
         .collect();
     rules.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
     // validate the path and slab now, so errors surface here, not mid-stream
