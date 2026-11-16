@@ -18,6 +18,7 @@ reference:
   - title: Getting started
     contents:
       - ic_example_repo
+      - ic_example_oisst
       - Icechunk
   - title: Storage and repositories
     desc: Where a repository lives, and opening or creating it.

@@ -66,3 +66,38 @@ ic_example_repo <- function(path = tempfile("icechunk-example-")) {
   ic_commit(s, "a small array")
   list(path = rp, authorize = prefix, source = src, values = vals)
 }
+
+#' A small real repository: ten days of NOAA OISST
+#'
+#' Unpacks one of two Icechunk repositories shipped with the package: ten
+#' days of NOAA OISST v2.1 daily sea surface temperature (September 1981),
+#' from [zarr-icechunk-assure](https://github.com/mdsumner/zarr-icechunk-assure).
+#' The two are the same repository built twice, with the virtual references
+#' written for NOAA's `https://` archive or its `s3://` bucket. Metadata,
+#' coordinates and history read offline; chunk values are fetched from NOAA
+#' when read, so they need the network. Each has two tags: `as-virtualized`
+#' (the `time` array lacks its `units` attribute, a defect kept on purpose)
+#' and `cf-repaired` (the units added by a metadata-only commit).
+#'
+#' @param cell `"https"` or `"s3"`: how the references were written.
+#' @param path directory to unpack into (must not exist).
+#' @return A list with `path` (the repository), `authorize` (a named list:
+#'   the container's URL prefix and an anonymous credential, ready for
+#'   [ic_repo_open()]), `probe` (the contract from `probe.json`: shape,
+#'   codecs, prefixes and one probe pixel) and `cell`.
+#' @seealso [ic_example_repo()] for a synthetic repository; the files are
+#'   in `system.file("extdata", "oisst-sample", package = "tabularberg")`.
+#' @example inst/examples/ic_example_oisst.R
+#' @export
+ic_example_oisst <- function(cell = c("https", "s3"), path = tempfile("oisst-")) {
+  cell <- match.arg(cell)
+  if (file.exists(path)) stop("'", path, "' already exists", call. = FALSE)
+  dir <- system.file("extdata", "oisst-sample", package = "tabularberg", mustWork = TRUE)
+  zip <- list.files(dir, sprintf("^repo-%s-.*\\.zip$", cell), full.names = TRUE)
+  utils::unzip(zip, exdir = path)
+  probe <- jsonlite::fromJSON(file.path(dir, "probe.json"), simplifyVector = FALSE)
+  prefix <- probe$cells[[cell]]$ref_prefix
+  cred <- if (cell == "s3") ic_cred_s3("anonymous") else ic_cred_http()
+  list(path = normalizePath(path, winslash = "/"), authorize = stats::setNames(list(cred), prefix),
+       probe = probe, cell = cell)
+}
