@@ -87,7 +87,7 @@ fn ic_get_(s: ExternalPtr<RSession>, k: &str, offset: f64, length: f64) -> R<Rob
     match block_on(s.store.get(&key(k), &br)) {
         Ok(b) => Ok(Raw::from_bytes(&b).into()),
         Err(e) if is_missing(&e) => Ok(().into()),
-        Err(e) => Err(ic(e)),
+        Err(e) => Err(crate::err::ic_chain(&e)),
     }
 }
 
@@ -107,7 +107,7 @@ fn ic_get_many_(s: ExternalPtr<RSession>, keys: Strings) -> R<List> {
         match r {
             Ok(b) => out.push(Raw::from_bytes(&b).into()),
             Err(e) if is_missing(&e) => out.push(().into()),
-            Err(e) => return Err(ic(e)),
+            Err(e) => return Err(crate::err::ic_chain(&e)),
         }
     }
     Ok(List::from_values(out))
