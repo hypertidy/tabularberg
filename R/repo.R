@@ -209,6 +209,7 @@ ic_repo_containers <- function(repo) {
   if (is.null(names(authorize)) || any(!nzchar(names(authorize)))) {
     stop("authorize must be named by URL prefix", call. = FALSE)
   }
+  names(authorize) <- .file_url(names(authorize))
   shown <- if (length(declared)) paste0("'", declared, "'", collapse = ", ") else "none"
   out <- list()
   # broad prefixes first, so a more specific entry for the same container wins

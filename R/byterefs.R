@@ -343,7 +343,7 @@ print.byterefs <- function(x, ...) {
   if (any(bad)) stop(out[bad][1], ": still a GDAL /vsi path after remap; choose a target that gives a URL", call. = FALSE)
   loc <- !is.na(out) & startsWith(out, "/")
   out[loc] <- paste0("file://", out[loc])
-  out
+  .file_url(out)
 }
 
 .br_unresolve <- function(loc, rules) {
@@ -365,7 +365,7 @@ print.byterefs <- function(x, ...) {
   switch(scheme,
     http = , https = sub("^(https?://[^/]+/).*$", "\\1", url),
     s3 = , gs = , gcs = sub("^([a-z0-9]+://[^/]+/).*$", "\\1", url),
-    file = paste0(dirname(url), "/"),
+    file = paste0(dirname(.file_url(url)), "/"),
     stop(url, ": no virtual chunk container for scheme '", scheme, "'", call. = FALSE))
 }
 

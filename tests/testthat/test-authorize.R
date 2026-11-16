@@ -41,3 +41,27 @@ test_that("an anonymous S3 credential marks its container anonymous", {
                         authorize = stats::setNames(list(ic_cred_s3("from_env")), p))
   expect_false(ic_repo_config(repo2)$virtual_chunk_containers[[p]]$store$s3$anonymous)
 })
+
+test_that("file:// prefixes and locations with doubled slashes still match", {
+  # macOS: TMPDIR ends in "/", so tempdir() paths contain "//"; Icechunk
+  # matches neither prefixes nor locations spelled that way
+  d <- withr::local_tempdir()
+  dd <- paste0(dirname(d), "//", basename(d))
+  writeBin(as.raw(1:8), file.path(d, "grid.bin"))
+  pre <- paste0("file://", dd, "/")
+  rp <- file.path(withr::local_tempdir(), "r")
+  repo <- ic_repo_create(rp, containers = ic_container(pre, "local", path = d), authorize = pre)
+  expect_false(grepl("//", sub("^file://", "", ic_repo_containers(repo)$prefix)))
+  s <- ic_session_writable(repo, "main")
+  ic_set(s, "zarr.json", charToRaw('{"zarr_format":3,"node_type":"group","attributes":{}}'))
+  ic_set(s, "a/zarr.json", charToRaw(paste0(
+    '{"zarr_format":3,"node_type":"array","shape":[1],"data_type":"uint8",',
+    '"chunk_grid":{"name":"regular","configuration":{"chunk_shape":[1]}},',
+    '"chunk_key_encoding":{"name":"default","configuration":{"separator":"/"}},',
+    '"fill_value":0,"codecs":[{"name":"bytes"}],"attributes":{}}')))
+  refs <- data.frame(dim_0 = 0L, location = paste0(pre, "grid.bin"), offset = 0, length = 8)
+  expect_identical(ic_set_virtual_refs(s, "/a", refs), 0L)
+  ic_commit(s, "doubled slashes")
+  r <- ic_session_readonly(ic_repo_open(rp, authorize = pre), branch = "main")
+  expect_identical(ic_get(r, "a/c/0"), as.raw(1:8))
+})

@@ -137,7 +137,7 @@ ic_virtual_locations <- function(session) sort(.ic(ic_virtual_locations_(session
 ic_set_virtual_ref <- function(session, key, location, offset, length,
                                etag = NULL, last_modified = NULL, validate = TRUE) {
   lm <- if (is.null(last_modified)) -1 else as.double(last_modified)
-  invisible(.ic(ic_set_virtual_ref_(session$ptr, key, location, as.double(offset),
+  invisible(.ic(ic_set_virtual_ref_(session$ptr, key, .file_url(location), as.double(offset),
                                     as.double(length), .chr(etag), lm, validate)))
 }
 
@@ -165,7 +165,7 @@ ic_set_virtual_refs <- function(session, path, refs, validate = TRUE) {
     if (is.null(m)) m <- matrix(integer(), 0, 0)
   }
   pick <- function(a, b) if (!is.null(refs[[a]])) refs[[a]] else refs[[b]]
-  loc <- as.character(pick("location", "path"))
+  loc <- .file_url(as.character(pick("location", "path")))
   len <- as.double(pick("length", "size"))
   etag <- if (is.null(refs$etag)) rep(NA_character_, n) else as.character(refs$etag)
   lm <- if (is.null(refs$last_modified)) rep(NA_real_, n) else as.double(refs$last_modified)

@@ -51,6 +51,15 @@ print.icechunk_cred <- function(x, ...) {
   invisible(x)
 }
 
+# Icechunk matches file:// locations and container prefixes only when the
+# path has no repeated slashes. macOS temporary paths carry them (TMPDIR ends
+# in "/", so tempdir() gives ".../T//Rtmp..."), so collapse them on the way in.
+.file_url <- function(x) {
+  f <- !is.na(x) & startsWith(x, "file://")
+  x[f] <- paste0("file://", gsub("/{2,}", "/", substring(x[f], 8L)))
+  x
+}
+
 #' @param url_prefix the prefix chunk locations must start with, e.g.
 #'   `"s3://bucket/path/"`, `"https://host/path/"`, `"file:///data/"`.
 #' @param type store type for the container.
@@ -68,7 +77,7 @@ ic_container <- function(url_prefix,
              anonymous = anonymous, allow_http = allow_http,
              force_path_style = force_path_style, path = path)
   st <- st[!vapply(st, is.null, logical(1))]
-  structure(list(url_prefix = url_prefix, store = st), class = "icechunk_container")
+  structure(list(url_prefix = .file_url(url_prefix), store = st), class = "icechunk_container")
 }
 
 # authorize: NULL, a character vector of prefixes (credential inferred from
