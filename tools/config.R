@@ -3,6 +3,17 @@
 # ICECHUNK_FEATURES: minimal | cloud (default) | full
 # DEBUG: non-empty -> debug build. NOT_CRAN: keep target dir, use the
 # user's CARGO_HOME (no re-download on a flaky network).
+# WebAssembly (webR, for which r-universe builds binaries) is not supported:
+# Icechunk's network stack needs tokio's `net` feature and `mio` stops with
+# "This wasm target is unsupported by mio" on wasm32-unknown-emscripten. So
+# there, src/Makevars builds only src/wasm/init.c (no Rust needed) and the
+# package installs without its native library. Checked before anything else.
+if (identical(R.version$platform, "wasm32-unknown-emscripten")) {
+  message("tabularberg does not support WebAssembly (webR): building without its Rust library.")
+  writeLines(c("# Written by tools/config.R for WebAssembly (webR): no Rust library.",
+               "OBJECTS = wasm/init.o"), "src/Makevars")
+  quit(save = "no", status = 0L)
+}
 feat <- Sys.getenv("ICECHUNK_FEATURES", "cloud")
 if (!feat %in% c("minimal", "cloud", "full")) stop("ICECHUNK_FEATURES must be minimal, cloud or full")
 is_debug <- nzchar(Sys.getenv("DEBUG"))
