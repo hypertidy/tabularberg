@@ -1,4 +1,4 @@
-# tabularberg <img src="man/figures/logo.png" align="right" height="212" alt="tabularberg logo" />
+# tabularberg <img src="man/figures/logo.png" align="right" height="290" alt="tabularberg logo" />
 
 <!-- badges: start -->
 <!-- badges: end -->
