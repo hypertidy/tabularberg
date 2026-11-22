@@ -6,7 +6,7 @@
 \alias{ic_virtual_locations}
 \title{Nodes and chunk references}
 \usage{
-ic_chunk_refs(session, path = NULL, inline = FALSE)
+ic_chunk_refs(session, path = NULL, inline = FALSE, chunks = NULL)
 
 ic_nodes(session)
 
@@ -18,6 +18,13 @@ ic_virtual_locations(session)
 \item{path}{an array path (\code{"/temp"}), or \code{NULL} for all arrays.}
 
 \item{inline}{include inline chunk bytes as a list column.}
+
+\item{chunks}{optional slab of one array, \code{list(dim_0 = c(lo, hi), ...)}
+of 0-based chunk indices (\code{hi} exclusive; a single number is that one
+index; dimensions left out are whole), as for \code{\link[=ic_refs_arrow]{ic_refs_arrow()}}. Needs
+\code{path}. Only the manifests covering the slab are read, and only the
+slab's chunks are returned, so an array of tens of millions of chunks
+can be asked about a few at a time.}
 }
 \value{
 a data frame: path, coord (comma-separated 0-based chunk index),
@@ -38,6 +45,7 @@ ex <- ic_example_repo()
 s <- ic_session_readonly(ic_repo_open(ex$path, authorize = ex$authorize), branch = "main")
 ic_nodes(s)
 ic_chunk_refs(s, "/from_bin")[, c("coord", "kind", "location", "offset", "length")]
+ic_chunk_refs(s, "/from_bin", chunks = list(dim_0 = 0))[, c("coord", "kind")]
 ic_chunk_refs(s, inline = TRUE)[, c("path", "coord", "kind", "length")]
 ic_virtual_locations(s)
 }
