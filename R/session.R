@@ -141,6 +141,7 @@ ic_chunk_refs <- function(session, path = NULL, inline = FALSE, chunks = NULL) {
             length = as.numeric(cr$length), etag = as.character(cr$etag),
             last_modified = as.numeric(cr$last_modified))
   x$etag[is.na(x$etag)] <- ""
+  x$offset[x$kind == "inline"] <- 0          # as the whole-table read has it
   if (inline) x$inline <- cr$data
   x <- .df(x)
   x$last_modified[is.nan(x$last_modified)] <- NA
