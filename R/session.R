@@ -98,13 +98,51 @@ ic_list <- function(session, prefix = "", recursive = TRUE) {
 #' @param session an `icechunk_session`.
 #' @param path an array path (`"/temp"`), or `NULL` for all arrays.
 #' @param inline include inline chunk bytes as a list column.
+#' @param chunks optional slab of one array, `list(dim_0 = c(lo, hi), ...)`
+#'   of 0-based chunk indices (`hi` exclusive; a single number is that one
+#'   index; dimensions left out are whole), as for [ic_refs_arrow()]. Needs
+#'   `path`. Only the manifests covering the slab are read, and only the
+#'   slab's chunks are returned, so an array of tens of millions of chunks
+#'   can be asked about a few at a time.
 #' @return a data frame: path, coord (comma-separated 0-based chunk index),
 #'   key, kind, location, offset, length, etag, last_modified (and inline).
 #' @example inst/examples/ic_chunk_refs.R
 #' @export
-ic_chunk_refs <- function(session, path = NULL, inline = FALSE) {
+ic_chunk_refs <- function(session, path = NULL, inline = FALSE, chunks = NULL) {
+  if (!is.null(chunks)) return(.chunk_refs_slab(session, path, inline, chunks))
   x <- .ic(ic_chunk_refs_(session$ptr, .chr(path), inline))
   if (!inline) x$inline <- NULL
+  x <- .df(x)
+  x$last_modified[is.nan(x$last_modified)] <- NA
+  x$last_modified <- .POSIXct(x$last_modified, tz = "UTC")
+  x
+}
+
+# ic_chunk_refs() for a slab of one array: the same columns, from the
+# ranged manifest read ic_refs_arrow() and the DBI interface use
+.chunk_refs_slab <- function(session, path, inline, chunks) {
+  if (is.null(path) || length(path) != 1L || is.na(path)) {
+    stop("`chunks` needs the `path` of one array", call. = FALSE)
+  }
+  p <- if (startsWith(path, "/")) path else paste0("/", path)
+  n <- ic_nodes(session)
+  i <- match(p, n$path)
+  if (is.na(i) || !identical(n$type[i], "array")) stop("no array '", path, "'", call. = FALSE)
+  nd <- length(strsplit(n$shape[i], ",", fixed = TRUE)[[1]])
+  cr <- .ic(ic_refs_columns_(session$ptr, p, .dbi_chunks_ranges(chunks, nd)))
+  m <- length(cr$kind)
+  idx <- if (m && length(cr$dims)) cr$dims else rep(list(integer()), nd)
+  coord <- if (m) do.call(paste, c(idx, sep = ",")) else character()
+  base <- sub("^/", "", p)
+  key <- if (m) paste0(if (nzchar(base)) paste0(base, "/"), "c/",
+                       do.call(paste, c(idx, sep = "/"))) else character()
+  x <- list(path = rep(p, m), coord = coord, key = key, kind = as.character(cr$kind),
+            location = as.character(cr$location), offset = as.numeric(cr$offset),
+            length = as.numeric(cr$length), etag = as.character(cr$etag),
+            last_modified = as.numeric(cr$last_modified))
+  x$etag[is.na(x$etag)] <- ""
+  x$offset[x$kind == "inline"] <- 0          # as the whole-table read has it
+  if (inline) x$inline <- cr$data
   x <- .df(x)
   x$last_modified[is.nan(x$last_modified)] <- NA
   x$last_modified <- .POSIXct(x$last_modified, tz = "UTC")

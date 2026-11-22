@@ -70,11 +70,29 @@ test_that("chunk refs table", {
   expect_identical(raw, ic_get(s, r$key[i]))
   # sparse array has only the written chunk
   expect_equal(ic_chunk_refs(s, "/int16_fill")$coord, "0,0")
+  # a slab is the same rows, read by range
+  cmp <- function(a, b) expect_equal(a[order(a$coord), ], b[order(b$coord), ],
+                                     ignore_attr = "row.names")
+  cmp(ic_chunk_refs(s, "/bench_f32", chunks = list()), r)
+  sl <- ic_chunk_refs(s, "bench_f32", chunks = list(dim_0 = c(2, 4), dim_1 = 5))
+  ij <- do.call(rbind, strsplit(r$coord, ","))
+  cmp(sl, r[ij[, 1] %in% c("2", "3") & ij[, 2] == "5", ])
+  expect_equal(nrow(sl), 2L)
+  # chunks never written are not rows; an empty slab has the columns
+  e <- ic_chunk_refs(s, "/int16_fill", chunks = list(dim_0 = c(1, 2)))
+  expect_equal(nrow(e), 0L)
+  expect_identical(names(e), names(r))
+  expect_error(ic_chunk_refs(s, chunks = list(dim_0 = 0)), "path")
+  expect_error(ic_chunk_refs(s, "/nope", chunks = list(dim_0 = 0)), "no array")
 
   si <- ic_session_readonly(ic_repo_open(fx_path("inline_v2")))
   ri <- ic_chunk_refs(si, inline = TRUE)
   expect_true(all(ri$kind == "inline"))
   expect_identical(ri$inline[[1]], ic_get(si, ri$key[1]))
+  a1 <- ri$path[1]
+  ri1 <- ri[ri$path == a1, ]
+  si1 <- ic_chunk_refs(si, a1, inline = TRUE, chunks = list())
+  expect_identical(si1$inline[match(ri1$key, si1$key)], ri1$inline)
 
   fx <- manifest()$fixtures$virtual_v2
   sv <- ic_session_readonly(ic_repo_open(fx_path("virtual_v2"), authorize = fx$virtual_prefix))

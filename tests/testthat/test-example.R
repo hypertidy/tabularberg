@@ -19,3 +19,18 @@ test_that("ic_diff takes version lists or a snapshot id", {
   expect_identical(a, b)
   expect_error(ic_diff(repo, list(foo = 1), "x"), "list\\(branch")
 })
+
+test_that("ic_chunk_refs(chunks =) is the slab of the whole table", {
+  ex <- ic_example_repo()
+  s <- ic_session_readonly(ic_repo_open(ex$path, authorize = ex$authorize), branch = "main")
+  for (a in c("/from_bin", "/small")) {
+    all <- ic_chunk_refs(s, a, inline = TRUE)
+    slab <- ic_chunk_refs(s, a, inline = TRUE, chunks = list())
+    expect_identical(names(slab), names(all))
+    o <- match(all$key, slab$key)
+    expect_false(anyNA(o))
+    expect_equal(slab[o, ], all, ignore_attr = "row.names")
+    one <- ic_chunk_refs(s, a, chunks = list(dim_0 = 1))
+    expect_setequal(one$key, all$key[startsWith(all$coord, "1,") | all$coord == "1"])
+  }
+})
