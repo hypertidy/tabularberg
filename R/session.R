@@ -127,7 +127,7 @@ ic_chunk_refs <- function(session, path = NULL, inline = FALSE, chunks = NULL) {
   p <- if (startsWith(path, "/")) path else paste0("/", path)
   n <- ic_nodes(session)
   i <- match(p, n$path)
-  if (is.na(i) || n$node_type[i] != "array") stop("no array '", path, "'", call. = FALSE)
+  if (is.na(i) || !identical(n$type[i], "array")) stop("no array '", path, "'", call. = FALSE)
   nd <- length(strsplit(n$shape[i], ",", fixed = TRUE)[[1]])
   cr <- .ic(ic_refs_columns_(session$ptr, p, .dbi_chunks_ranges(chunks, nd)))
   m <- length(cr$kind)
